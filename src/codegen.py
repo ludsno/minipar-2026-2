@@ -5,6 +5,7 @@ import sys
 from typing import Optional
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, SeqBlock, ParBlock, BinaryExpr, 
+    PureBlock, ImpureBlock, ForkBlock, JoinStmt,
     UnaryExpr, NumberExpr, StringExpr, BoolExpr, IdentifierExpr, IfStmt, WhileStmt,
     DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
     ClassDecl, FuncDecl, ReturnStmt, MethodCall, FuncCallExpr, PropertyAccess, PropertyAssign, NewExpr, ThisExpr,
@@ -178,6 +179,54 @@ class CppCodeGenerator:
             for stmt in node.statements:
                 lines.append(f"{indent}    __m_thr.emplace_back([&]() {{\n{self._translate_statement(stmt, indent + '        ')}{indent}    }});\n")
             lines.append(f"{indent}    for (auto& t : __m_thr) t.join();\n{indent}}}\n")
+            return "".join(lines)
+        if isinstance(node, PureBlock):
+            # Se for um for regular com inicializador, condição e incremento
+            if isinstance(node.body, ForStmt) and node.body.initializer and node.body.condition and node.body.increment:
+                for_node = node.body
+                init_str = self._translate_for_part(for_node.initializer)
+                cond_str = self._translate_expression(for_node.condition)
+                inc_str = self._translate_for_part(for_node.increment)
+                lines = [
+                    f"{indent}{{\n",
+                    f"{indent}    // SPar Pure Data Parallelism: Pure Map Loop\n",
+                    f"{indent}    for ({init_str}; {cond_str}; {inc_str})\n",
+                    self._translate_statement(for_node.body, indent if isinstance(for_node.body, (SeqBlock, ParBlock)) else indent + "    "),
+                    f"{indent}}}\n"
+                ]
+                return "".join(lines)
+            else:
+                lines = [f"{indent}{{\n", f"{indent}    // SPar Pure Block\n"]
+                lines.append(self._translate_statement(node.body, indent + "    "))
+                lines.append(f"{indent}}}\n")
+                return "".join(lines)
+        if isinstance(node, ImpureBlock):
+            lines = [
+                f"{indent}{{\n",
+                f"{indent}    // SPar Impure Critical Section (Protected by Mutex)\n",
+                f"{indent}    std::lock_guard<std::mutex> __impure_guard(__minipar_impure_mtx);\n"
+            ]
+            for stmt in node.statements:
+                lines.append(self._translate_statement(stmt, indent + "    "))
+            lines.append(f"{indent}}}\n")
+            return "".join(lines)
+        if isinstance(node, ForkBlock):
+            task_label = f"/* {node.task_name} */" if node.task_name else ""
+            lines = [
+                f"{indent}// Fork Task {task_label}\n",
+                f"{indent}__active_fork_threads.emplace_back([&]() {{\n",
+                self._translate_statement(node.body, indent + "    "),
+                f"{indent}}});\n"
+            ]
+            return "".join(lines)
+        if isinstance(node, JoinStmt):
+            lines = [
+                f"{indent}// Join Tasks\n",
+                f"{indent}for (auto& __t : __active_fork_threads) {{\n",
+                f"{indent}    if (__t.joinable()) __t.join();\n",
+                f"{indent}}}\n",
+                f"{indent}__active_fork_threads.clear();\n"
+            ]
             return "".join(lines)
         if isinstance(node, WhileStmt):
             res = f"{indent}while ({self._translate_expression(node.condition)})\n"

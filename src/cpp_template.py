@@ -4,6 +4,7 @@ _CPP_HEADER = """\
 #include <sstream>
 #include <vector>
 #include <thread>
+#include <mutex>
 #include <memory>
 #include <cstring>
 #include <chrono>
@@ -22,6 +23,11 @@ _CPP_HEADER = """\
   #include <unistd.h>
   #define CLOSE_SOCK close
 #endif
+
+// Mutex para regioes impuras (SPar Impure Protection)
+static std::mutex __minipar_impure_mtx;
+// Pool de threads ativas disparadas por Fork
+static std::vector<std::thread> __active_fork_threads;
 
 // Helper para Random nativo
 double random_val() { return (double)rand() / RAND_MAX; }
