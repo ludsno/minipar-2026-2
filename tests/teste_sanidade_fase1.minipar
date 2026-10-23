@@ -35,3 +35,4 @@ join;
 print("Resultado Tarefa A: ", resultado_task1);
 print("Resultado Tarefa B: ", resultado_task2);
 print("--- Teste de Sanidade Fase 1 Finalizado com Sucesso! ---");
+
