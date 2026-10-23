@@ -67,6 +67,28 @@ class ParBlock(ASTNode):
     line: int = 1
 
 @dataclass
+class PureBlock(ASTNode):
+    body: ASTNode
+    line: int = 1
+
+@dataclass
+class ImpureBlock(ASTNode):
+    statements: List[ASTNode] = field(default_factory=list)
+    line: int = 1
+
+@dataclass
+class ForkBlock(ASTNode):
+    body: ASTNode
+    task_name: Optional[str] = None
+    cores: Optional[ASTNode] = None
+    line: int = 1
+
+@dataclass
+class JoinStmt(ASTNode):
+    target_tasks: List[str] = field(default_factory=list)
+    line: int = 1
+
+@dataclass
 class IfStmt(ASTNode):
     condition: ASTNode
     then_branch: ASTNode

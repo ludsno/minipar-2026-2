@@ -4,8 +4,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, IdentifierExpr, BinaryExpr,
-    UnaryExpr, NumberExpr, StringExpr, BoolExpr, SeqBlock, ParBlock, IfStmt, WhileStmt,
-    DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
+    UnaryExpr, NumberExpr, StringExpr, BoolExpr, SeqBlock, ParBlock,
+    PureBlock, ImpureBlock, ForkBlock, JoinStmt,
+    IfStmt, WhileStmt, DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
     ClassDecl, FuncDecl, ReturnStmt, MethodCall, FuncCallExpr, PropertyAccess, PropertyAssign, NewExpr, ThisExpr,
     CChannelExpr, SendStmt, ReceiveExpr, ListLiteral, MatrixCreateExpr, IndexExpr, IndexAssign
 )
@@ -27,6 +28,7 @@ class SemanticAnalyzer:
         self._classes: Dict[str, Symbol] = {}
         self._functions: Dict[str, Symbol] = {}
         self._loop_depth = 0
+        self._inside_pure = False
         self._enter_scope()
 
     def _enter_scope(self) -> None: self._scopes.append({})
@@ -246,6 +248,31 @@ class SemanticAnalyzer:
             pass
         elif isinstance(node, InputExpr):
             if node.prompt: self.validate_node(node.prompt)
+        elif isinstance(node, PureBlock):
+            old_pure = self._inside_pure
+            self._inside_pure = True
+            self.validate_node(node.body)
+            self._inside_pure = old_pure
+        elif isinstance(node, ImpureBlock):
+            if not self._inside_pure:
+                self._report(node.line, "A anotacao 'impure' so e permitida dentro de um bloco ou laco 'pure'.")
+            for stmt in node.statements:
+                self.validate_node(stmt)
+        elif isinstance(node, ForkBlock):
+            self.validate_node(node.body)
+        elif isinstance(node, JoinStmt):
+            pass
+
+    def get_symbol_table(self) -> List[Dict[str, any]]:
+        records = []
+        for scope in self._scopes:
+            for name, sym in scope.items():
+                records.append({
+                    "name": name,
+                    "type": sym.type,
+                    "params": sym.params
+                })
+        return records
 
     def analyze(self, program: Program) -> bool:
         self._collect_declarations(program)

@@ -24,6 +24,10 @@ class TokenType(Enum):
     RETURN    = auto()
     SEQ       = auto()
     PAR       = auto()
+    PURE      = auto()
+    IMPURE    = auto()
+    FORK      = auto()
+    JOIN      = auto()
     THIS      = auto()
     C_CHANNEL = auto()
     SEND      = auto()
@@ -65,6 +69,10 @@ KEYWORDS: dict[str, TokenType] = {
     "new":       TokenType.NEW,
     "seq":       TokenType.SEQ,
     "par":       TokenType.PAR,
+    "pure":      TokenType.PURE,
+    "impure":    TokenType.IMPURE,
+    "fork":      TokenType.FORK,
+    "join":      TokenType.JOIN,
     "if":        TokenType.IF,
     "else":      TokenType.ELSE,
     "while":     TokenType.WHILE,
