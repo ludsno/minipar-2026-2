@@ -149,3 +149,4 @@ print("Tempo Paralelo               : ", tempo_par, " s");
 print("Aceleracao (Speedup)         : ", speedup, "x mais rapido!");
 print("Reducao de Tempo             : ", reducao, "%");
 print("==========================================");
+
