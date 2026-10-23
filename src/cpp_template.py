@@ -4,6 +4,7 @@ _CPP_HEADER = """\
 #include <sstream>
 #include <vector>
 #include <thread>
+#include <mutex>
 #include <memory>
 #include <cstring>
 #include <chrono>
@@ -23,8 +24,29 @@ _CPP_HEADER = """\
   #define CLOSE_SOCK close
 #endif
 
+// Mutex para regioes impuras (SPar Impure Protection)
+static std::mutex __minipar_impure_mtx;
+// Pool de threads ativas disparadas por Fork
+static std::vector<std::thread> __active_fork_threads;
+
 // Helper para Random nativo
 double random_val() { return (double)rand() / RAND_MAX; }
+
+// Temporizador nativo de alta precisao para benchmarks MiniPar
+double obter_tempo() {
+    using namespace std::chrono;
+    return duration_cast<duration<double>>(high_resolution_clock::now().time_since_epoch()).count();
+}
+
+// Simulador de carga de trabalho de CPU sem ser eliminado por otimizador
+void simular_trabalho(double milissegundos) {
+    auto inicio = std::chrono::high_resolution_clock::now();
+    while (true) {
+        auto agora = std::chrono::high_resolution_clock::now();
+        double decorrido = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(agora - inicio).count();
+        if (decorrido >= milissegundos) break;
+    }
+}
 
 // Helper para Input
 std::string input() {

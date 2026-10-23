@@ -3,7 +3,8 @@ import sys
 from typing import List
 from lexer import Token, TokenType
 from ast_nodes import (
-    ASTNode, Program, VarDecl, Assignment, PrintStmt, SeqBlock, ParBlock, 
+    ASTNode, Program, VarDecl, Assignment, PrintStmt, SeqBlock, ParBlock,
+    PureBlock, ImpureBlock, ForkBlock, JoinStmt,
     BinaryExpr, UnaryExpr, NumberExpr, StringExpr, BoolExpr, IdentifierExpr, IfStmt, WhileStmt,
     DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
     ClassDecl, FuncDecl, ReturnStmt, MethodCall, FuncCallExpr, PropertyAccess, PropertyAssign, NewExpr, ThisExpr,
@@ -93,6 +94,47 @@ class Parser:
             node.statements.append(self._parse_statement())
         self._consume(TokenType.RBRACE, "Esperado '}' para fechar bloco PAR")
         return node
+
+    def _parse_pure_block(self) -> ASTNode:
+        line = self._tokens[self._pos - 1].line
+        if self._peek().type == TokenType.FOR:
+            self._advance()
+            body = self._parse_for_stmt()
+        elif self._peek().type == TokenType.LBRACE:
+            body = self._parse_seq_block()
+        else:
+            body = self._parse_statement()
+        return PureBlock(body=body, line=line)
+
+    def _parse_impure_block(self) -> ASTNode:
+        line = self._tokens[self._pos - 1].line
+        statements = []
+        self._consume(TokenType.LBRACE, "Esperado '{' apos 'impure'")
+        while self._peek().type not in (TokenType.RBRACE, TokenType.END_OF_FILE):
+            statements.append(self._parse_statement())
+        self._consume(TokenType.RBRACE, "Esperado '}' para fechar bloco 'impure'")
+        return ImpureBlock(statements=statements, line=line)
+
+    def _parse_fork_block(self) -> ASTNode:
+        line = self._tokens[self._pos - 1].line
+        task_name = None
+        if self._peek().type == TokenType.IDENTIFIER:
+            task_name = self._advance().lexeme
+        if self._peek().type == TokenType.LBRACE:
+            body = self._parse_seq_block()
+        else:
+            body = self._parse_statement()
+        return ForkBlock(body=body, task_name=task_name, line=line)
+
+    def _parse_join_stmt(self) -> ASTNode:
+        line = self._tokens[self._pos - 1].line
+        target_tasks = []
+        while self._peek().type == TokenType.IDENTIFIER:
+            target_tasks.append(self._advance().lexeme)
+            if not self._match(TokenType.COMMA):
+                break
+        self._match(TokenType.SEMICOLON)
+        return JoinStmt(target_tasks=target_tasks, line=line)
 
     def _parse_if_stmt(self) -> ASTNode:
         line = self._tokens[self._pos - 1].line
@@ -220,6 +262,10 @@ class Parser:
             if self._peek().type == TokenType.SEQ: self._advance()
             return self._parse_seq_block()
         if self._match(TokenType.PAR): return self._parse_par_block()
+        if self._match(TokenType.PURE): return self._parse_pure_block()
+        if self._match(TokenType.IMPURE): return self._parse_impure_block()
+        if self._match(TokenType.FORK): return self._parse_fork_block()
+        if self._match(TokenType.JOIN): return self._parse_join_stmt()
         if self._match(TokenType.PRINT): return self._parse_print_stmt()
         if self._match(TokenType.SEND): return self._parse_send_stmt()
         if self._match(TokenType.IF): return self._parse_if_stmt()

@@ -1,0 +1,152 @@
+# ==============================================================================
+# TESTE 10: 6 Núcleos de CPU (160 Atividades + Mandelbrot + Tapete Sierpinski)
+# Paralelismo em larga escala no MiniPar 2026.2 com Fork, Join, Pure e Impure
+# ==============================================================================
+
+func simular_correcao(qtd) {
+    simular_trabalho(15);
+    return 1;
+}
+
+func renderizar_mandelbrot() {
+    print("=== FRACTAL DE MANDELBROT (Gerado pelo Nucleo 5) ===");
+    var altura = 20;
+    var largura = 50;
+    var max_iter = 50;
+
+    pure for (var y = 0; y < altura; y = y + 1) {
+        var cy = (y / 20.0) * 2.4 - 1.2;
+        var linha_res = "";
+        for (var x = 0; x < largura; x = x + 1) {
+            var cx = (x / 50.0) * 3.0 - 2.0;
+            var zx = 0.0;
+            var zy = 0.0;
+            var iter = 0;
+            while ((zx * zx + zy * zy <= 4.0) && (iter < max_iter)) {
+                var tmp = zx * zx - zy * zy + cx;
+                zy = 2.0 * zx * zy + cy;
+                zx = tmp;
+                iter = iter + 1;
+            }
+            if (iter >= max_iter) {
+                linha_res = linha_res + "@";
+            } else {
+                if (iter > 10) {
+                    linha_res = linha_res + "+";
+                } else {
+                    linha_res = linha_res + ".";
+                }
+            }
+        }
+        impure {
+            print(linha_res);
+        }
+    }
+    print("====================================================");
+}
+
+func renderizar_sierpinski() {
+    print("=== TAPETE DE SIERPINSKI (Gerado pelo Nucleo 6) ===");
+    print("### ### ###");
+    print("# # # # # #");
+    print("### ### ###");
+    print("###     ###");
+    print("# #     # #");
+    print("###     ###");
+    print("### ### ###");
+    print("# # # # # #");
+    print("### ### ###");
+    print("====================================================");
+}
+
+print("Carga de Trabalho: 160 atividades + Mandelbrot (ASCII) + Sierpinski");
+
+# ------------------------------------------------------------------------------
+# 1. Execução Sequencial (Apenas 1 Núcleo)
+# ------------------------------------------------------------------------------
+print("\n--- 1. Executando Modo Sequencial (Apenas 1 Nucleo) ---");
+var t_ini_seq = obter_tempo();
+
+var tarefas_seq = 0;
+while (tarefas_seq < 160) {
+    var c = simular_correcao(1);
+    tarefas_seq = tarefas_seq + 1;
+}
+renderizar_mandelbrot();
+renderizar_sierpinski();
+
+var t_fim_seq = obter_tempo();
+var tempo_seq = t_fim_seq - t_ini_seq;
+print("Tempo Sequencial Concluido em: ", tempo_seq, " segundos");
+
+# ------------------------------------------------------------------------------
+# 2. Execução Paralela (6 Núcleos Dedicados)
+# ------------------------------------------------------------------------------
+print("\n--- 2. Executando Modo Paralelo (6 Nucleos Dedicados) ---");
+var t_ini_par = obter_tempo();
+
+# Núcleos 1 a 4: Avaliação das atividades (40 cada)
+fork nucleo_1 {
+    var t1 = 0;
+    while (t1 < 40) {
+        var c1 = simular_correcao(1);
+        t1 = t1 + 1;
+    }
+}
+
+fork nucleo_2 {
+    var t2 = 0;
+    while (t2 < 40) {
+        var c2 = simular_correcao(1);
+        t2 = t2 + 1;
+    }
+}
+
+fork nucleo_3 {
+    var t3 = 0;
+    while (t3 < 40) {
+        var c3 = simular_correcao(1);
+        t3 = t3 + 1;
+    }
+}
+
+fork nucleo_4 {
+    var t4 = 0;
+    while (t4 < 40) {
+        var c4 = simular_correcao(1);
+        t4 = t4 + 1;
+    }
+}
+
+# Núcleo 5: Fractal de Mandelbrot com Pure/Impure
+fork nucleo_5_mandelbrot {
+    renderizar_mandelbrot();
+}
+
+# Núcleo 6: Tapete de Sierpinski
+fork nucleo_6_sierpinski {
+    renderizar_sierpinski();
+}
+
+join;
+
+var t_fim_par = obter_tempo();
+var tempo_par = t_fim_par - t_ini_par;
+print("Tempo Paralelo Concluido em:   ", tempo_par, " segundos");
+
+# ------------------------------------------------------------------------------
+# 3. Benchmark de Desempenho
+# ------------------------------------------------------------------------------
+var speedup = tempo_seq / tempo_par;
+var reducao = (1.0 - (tempo_par / tempo_seq)) * 100.0;
+
+print("\n==========================================");
+print("BENCHMARK DE DESEMPENHO (TESTE 10)");
+print("==========================================");
+print("Nucleos Utilizados (Paralelo) : 6");
+print("Tempo Sequencial             : ", tempo_seq, " s");
+print("Tempo Paralelo               : ", tempo_par, " s");
+print("Aceleracao (Speedup)         : ", speedup, "x mais rapido!");
+print("Reducao de Tempo             : ", reducao, "%");
+print("==========================================");
+
