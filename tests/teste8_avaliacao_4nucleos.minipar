@@ -1,0 +1,96 @@
+# ==============================================================================
+# TESTE 8: Avaliação de Atividades Didáticas em Paralelo (4 Núcleos de CPU)
+# Professor + 3 Monitores avaliando 160 tarefas acadêmicas
+# Demonstração de Speedup e redução de tempo no MiniPar 2026.2
+# ==============================================================================
+
+func simular_correcao(iteracoes) {
+    simular_trabalho(15);
+    return 1;
+}
+
+print("Total de Atividades a Avaliar: 160 (40 alunos x 4 atividades)");
+
+# ------------------------------------------------------------------------------
+# 1. Execução Sequencial (Apenas 1 Núcleo / Professor)
+# ------------------------------------------------------------------------------
+print("\n--- 1. Executando Modo Sequencial (Apenas 1 Nucleo / Professor) ---");
+var t_ini_seq = obter_tempo();
+
+var tarefas_seq = 0;
+while (tarefas_seq < 160) {
+    var c = simular_correcao(50000);
+    tarefas_seq = tarefas_seq + 1;
+}
+
+var t_fim_seq = obter_tempo();
+var tempo_seq = t_fim_seq - t_ini_seq;
+print("Tempo Sequencial Concluido em: ", tempo_seq, " segundos");
+
+# ------------------------------------------------------------------------------
+# 2. Execução Paralela (4 Núcleos Dedicados via Fork / Join)
+# ------------------------------------------------------------------------------
+print("\n--- 2. Executando Modo Paralelo (4 Nucleos Dedicados: Professor + 3 Monitores) ---");
+var t_ini_par = obter_tempo();
+
+# Núcleo 1: Professor (40 atividades)
+fork nucleo_1_professor {
+    var t1 = 0;
+    while (t1 < 40) {
+        var c1 = simular_correcao(50000);
+        t1 = t1 + 1;
+    }
+    print("[Professor] Concluiu lote de 40 atividades.");
+}
+
+# Núcleo 2: Monitor 1 (40 atividades)
+fork nucleo_2_monitor1 {
+    var t2 = 0;
+    while (t2 < 40) {
+        var c2 = simular_correcao(50000);
+        t2 = t2 + 1;
+    }
+    print("[Monitor 1] Concluiu lote de 40 atividades.");
+}
+
+# Núcleo 3: Monitor 2 (40 atividades)
+fork nucleo_3_monitor2 {
+    var t3 = 0;
+    while (t3 < 40) {
+        var c3 = simular_correcao(50000);
+        t3 = t3 + 1;
+    }
+    print("[Monitor 2] Concluiu lote de 40 atividades.");
+}
+
+# Núcleo 4: Monitor 3 (40 atividades)
+fork nucleo_4_monitor3 {
+    var t4 = 0;
+    while (t4 < 40) {
+        var c4 = simular_correcao(50000);
+        t4 = t4 + 1;
+    }
+    print("[Monitor 3] Concluiu lote de 40 atividades.");
+}
+
+join;
+
+var t_fim_par = obter_tempo();
+var tempo_par = t_fim_par - t_ini_par;
+print("Tempo Paralelo Concluido em:   ", tempo_par, " segundos");
+
+# ------------------------------------------------------------------------------
+# 3. Benchmark de Desempenho
+# ------------------------------------------------------------------------------
+var speedup = tempo_seq / tempo_par;
+var reducao = (1.0 - (tempo_par / tempo_seq)) * 100.0;
+
+print("\n==========================================");
+print("BENCHMARK DE DESEMPENHO (TESTE 8)");
+print("==========================================");
+print("Nucleos Utilizados (Paralelo) : 4");
+print("Tempo Sequencial             : ", tempo_seq, " s");
+print("Tempo Paralelo               : ", tempo_par, " s");
+print("Aceleracao (Speedup)         : ", speedup, "x mais rapido!");
+print("Reducao no tempo             : ", reducao, "% de economia");
+print("==========================================");
