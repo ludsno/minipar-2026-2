@@ -22,6 +22,7 @@ class Symbol:
 class SemanticAnalyzer:
     def __init__(self) -> None:
         self._scopes: List[Dict[str, Symbol]] = []
+        self._symbol_history: List[Dict[str, any]] = []
         self._has_errors = False
         self._current_function: Optional[str] = None
         self._current_class: Optional[str] = None
@@ -38,11 +39,32 @@ class SemanticAnalyzer:
     def _get_context(self) -> str:
         return f" (Funcao: {self._current_function})" if self._current_function else ""
 
+    def _current_scope_label(self) -> str:
+        if self._current_class and self._current_function:
+            return f"{self._current_class}.{self._current_function}"
+        if self._current_class:
+            return f"Class:{self._current_class}"
+        if self._current_function:
+            return f"Func:{self._current_function}"
+        if self._inside_pure:
+            return "PureBlock"
+        if len(self._scopes) > 1:
+            return "Local"
+        return "Global"
+
     def _define_symbol(self, name: str, type_: str, line: int, params: Optional[List[str]] = None) -> None:
         if name in self._scopes[-1]:
             print(f"[ERRO SEMANTICO] Linha {line}{self._get_context()}: Variavel '{name}' ja declarada.", file=sys.stderr)
             self._has_errors = True
-        else: self._scopes[-1][name] = Symbol(name=name, type=type_, params=params or [])
+        else:
+            self._scopes[-1][name] = Symbol(name=name, type=type_, params=params or [])
+            self._symbol_history.append({
+                "name": name,
+                "type": type_,
+                "scope": self._current_scope_label(),
+                "line": line,
+                "params": params or [],
+            })
 
     def _lookup(self, name: str) -> Optional[Symbol]:
         for scope in reversed(self._scopes):
@@ -264,15 +286,7 @@ class SemanticAnalyzer:
             pass
 
     def get_symbol_table(self) -> List[Dict[str, any]]:
-        records = []
-        for scope in self._scopes:
-            for name, sym in scope.items():
-                records.append({
-                    "name": name,
-                    "type": sym.type,
-                    "params": sym.params
-                })
-        return records
+        return list(self._symbol_history)
 
     def analyze(self, program: Program) -> bool:
         self._collect_declarations(program)

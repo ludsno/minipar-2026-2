@@ -118,13 +118,17 @@ class Parser:
     def _parse_fork_block(self) -> ASTNode:
         line = self._tokens[self._pos - 1].line
         task_name = None
+        cores = None
         if self._peek().type == TokenType.IDENTIFIER:
             task_name = self._advance().lexeme
+        if self._match(TokenType.LPAREN):
+            cores = self._parse_expression()
+            self._consume(TokenType.RPAREN, "Esperado ')' apos alocacao de nucleo/destino no fork")
         if self._peek().type == TokenType.LBRACE:
             body = self._parse_seq_block()
         else:
             body = self._parse_statement()
-        return ForkBlock(body=body, task_name=task_name, line=line)
+        return ForkBlock(body=body, task_name=task_name, cores=cores, line=line)
 
     def _parse_join_stmt(self) -> ASTNode:
         line = self._tokens[self._pos - 1].line

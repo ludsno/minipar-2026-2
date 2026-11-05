@@ -46,17 +46,30 @@ func renderizar_mandelbrot() {
 }
 
 func renderizar_sierpinski() {
-    print("=== TAPETE DE SIERPINSKI (Gerado pelo Nucleo 6) ===");
-    print("### ### ###");
-    print("# # # # # #");
-    print("### ### ###");
-    print("###     ###");
-    print("# #     # #");
-    print("###     ###");
-    print("### ### ###");
-    print("# # # # # #");
-    print("### ### ###");
-    print("====================================================");
+    var tamanho = 9;
+    pure for (var y = 0; y < tamanho; y = y + 1) {
+        var linha_s = "";
+        for (var x = 0; x < tamanho; x = x + 1) {
+            var y_meio_central = (y >= 3) && (y < 6);
+            var x_meio_central = (x >= 3) && (x < 6);
+            var furo_central = y_meio_central && x_meio_central;
+            var furo_local = ((y % 3) == 1) && ((x % 3) == 1);
+            if (furo_central || furo_local) {
+                linha_s = linha_s + " ";
+            } else {
+                linha_s = linha_s + "#";
+            }
+        }
+        impure {
+            if (y == 0) {
+                print("=== TAPETE DE SIERPINSKI (Gerado pelo Nucleo 6) ===");
+            }
+            print(linha_s);
+            if (y == 8) {
+                print("====================================================");
+            }
+        }
+    }
 }
 
 print("Carga de Trabalho: 160 atividades + Mandelbrot (ASCII) + Sierpinski");

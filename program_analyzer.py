@@ -17,8 +17,10 @@ def _read_source(path: str) -> str:
 def _extract_title(source: str, filename: str) -> str:
     for line in source.splitlines():
         line = line.strip()
-        if line.startswith("#") and len(line) > 2:
-            return line.lstrip("#").strip()
+        if line.startswith("#"):
+            cleaned = line.lstrip("#=- \t").strip()
+            if len(cleaned) > 2:
+                return cleaned
     return filename.replace(".minipar", "")
 
 
@@ -61,7 +63,7 @@ def analyze_program(source_path: str) -> dict[str, Any]:
 
     has_send = bool(re.search(r'\bsend\s*\(', source))
     has_receive = bool(re.search(r'\breceive\s*\(', source))
-    has_par = bool(re.search(r'\bpar\s*\{', source))
+    has_par = bool(re.search(r'\b(par|fork|pure)\b', source))
     channel_count = _count_channels(source)
 
     multi_computer: Optional[dict[str, Any]] = None

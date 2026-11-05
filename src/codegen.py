@@ -96,11 +96,11 @@ class CppCodeGenerator:
     def _has_value_return(self, node: Optional[ASTNode]) -> bool:
         if node is None: return False
         if isinstance(node, ReturnStmt): return node.value is not None
-        if isinstance(node, (SeqBlock, ParBlock)):
+        if isinstance(node, (SeqBlock, ParBlock, ImpureBlock)):
             return any(self._has_value_return(stmt) for stmt in node.statements)
         if isinstance(node, IfStmt):
             return self._has_value_return(node.then_branch) or self._has_value_return(node.else_branch)
-        if isinstance(node, (WhileStmt, DoWhileStmt, ForStmt)):
+        if isinstance(node, (WhileStmt, DoWhileStmt, ForStmt, PureBlock, ForkBlock)):
             return self._has_value_return(node.body)
         return False
 
@@ -114,11 +114,11 @@ class CppCodeGenerator:
             return self._uses_float_return(node.left) or self._uses_float_return(node.right)
         if isinstance(node, NumberExpr):
             return "." in node.value
-        if isinstance(node, (SeqBlock, ParBlock)):
+        if isinstance(node, (SeqBlock, ParBlock, ImpureBlock)):
             return any(self._uses_float_return(stmt) for stmt in node.statements)
         if isinstance(node, IfStmt):
             return self._uses_float_return(node.then_branch) or self._uses_float_return(node.else_branch)
-        if isinstance(node, (WhileStmt, DoWhileStmt, ForStmt)):
+        if isinstance(node, (WhileStmt, DoWhileStmt, ForStmt, PureBlock, ForkBlock)):
             return self._uses_float_return(node.body)
         if isinstance(node, ReturnStmt):
             return self._uses_float_return(node.value)
