@@ -3,6 +3,7 @@ import os
 from typing import Optional
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, SeqBlock, ParBlock, BinaryExpr,
+    PureBlock, ImpureBlock, ForkBlock, JoinStmt,
     UnaryExpr, NumberExpr, StringExpr, BoolExpr, IdentifierExpr, IfStmt, WhileStmt,
     DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
     ClassDecl, FuncDecl, ReturnStmt, MethodCall, FuncCallExpr, PropertyAccess, PropertyAssign, NewExpr, ThisExpr,
@@ -161,6 +162,23 @@ class TACGenerator:
             self._emit(f"send {self._expr(node.channel)}, {self._expr(node.message)}")
         elif isinstance(node, (SeqBlock, ParBlock)):
             for stmt in node.statements: self._stmt(stmt)
+        elif isinstance(node, PureBlock):
+            self._emit("BEGIN_PURE_MAP")
+            self._stmt(node.body)
+            self._emit("END_PURE_MAP")
+        elif isinstance(node, ImpureBlock):
+            self._emit("ACQUIRE_LOCK")
+            for stmt in node.statements:
+                self._stmt(stmt)
+            self._emit("RELEASE_LOCK")
+        elif isinstance(node, ForkBlock):
+            task_id = node.task_name or "anonymous_task"
+            self._emit(f"FORK_TASK {task_id}:")
+            self._stmt(node.body)
+            self._emit(f"ENDFORK {task_id}")
+        elif isinstance(node, JoinStmt):
+            targets = ", ".join(node.target_tasks) if node.target_tasks else "ALL"
+            self._emit(f"JOIN_TASKS {targets}")
         elif isinstance(node, IfStmt):
             end = self._label("ENDIF")
             else_label = self._label("ELSE") if node.else_branch else end

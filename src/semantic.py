@@ -4,8 +4,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, IdentifierExpr, BinaryExpr,
-    UnaryExpr, NumberExpr, StringExpr, BoolExpr, SeqBlock, ParBlock, IfStmt, WhileStmt,
-    DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
+    UnaryExpr, NumberExpr, StringExpr, BoolExpr, SeqBlock, ParBlock,
+    PureBlock, ImpureBlock, ForkBlock, JoinStmt,
+    IfStmt, WhileStmt, DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
     ClassDecl, FuncDecl, ReturnStmt, MethodCall, FuncCallExpr, PropertyAccess, PropertyAssign, NewExpr, ThisExpr,
     CChannelExpr, SendStmt, ReceiveExpr, ListLiteral, MatrixCreateExpr, IndexExpr, IndexAssign
 )
@@ -21,12 +22,14 @@ class Symbol:
 class SemanticAnalyzer:
     def __init__(self) -> None:
         self._scopes: List[Dict[str, Symbol]] = []
+        self._symbol_history: List[Dict[str, any]] = []
         self._has_errors = False
         self._current_function: Optional[str] = None
         self._current_class: Optional[str] = None
         self._classes: Dict[str, Symbol] = {}
         self._functions: Dict[str, Symbol] = {}
         self._loop_depth = 0
+        self._inside_pure = False
         self._enter_scope()
 
     def _enter_scope(self) -> None: self._scopes.append({})
@@ -36,11 +39,32 @@ class SemanticAnalyzer:
     def _get_context(self) -> str:
         return f" (Funcao: {self._current_function})" if self._current_function else ""
 
+    def _current_scope_label(self) -> str:
+        if self._current_class and self._current_function:
+            return f"{self._current_class}.{self._current_function}"
+        if self._current_class:
+            return f"Class:{self._current_class}"
+        if self._current_function:
+            return f"Func:{self._current_function}"
+        if self._inside_pure:
+            return "PureBlock"
+        if len(self._scopes) > 1:
+            return "Local"
+        return "Global"
+
     def _define_symbol(self, name: str, type_: str, line: int, params: Optional[List[str]] = None) -> None:
         if name in self._scopes[-1]:
             print(f"[ERRO SEMANTICO] Linha {line}{self._get_context()}: Variavel '{name}' ja declarada.", file=sys.stderr)
             self._has_errors = True
-        else: self._scopes[-1][name] = Symbol(name=name, type=type_, params=params or [])
+        else:
+            self._scopes[-1][name] = Symbol(name=name, type=type_, params=params or [])
+            self._symbol_history.append({
+                "name": name,
+                "type": type_,
+                "scope": self._current_scope_label(),
+                "line": line,
+                "params": params or [],
+            })
 
     def _lookup(self, name: str) -> Optional[Symbol]:
         for scope in reversed(self._scopes):
@@ -82,7 +106,7 @@ class SemanticAnalyzer:
         if isinstance(node, MethodCall):
             return "unknown"
         if isinstance(node, FuncCallExpr):
-            if node.name in ("random", "exp"): return "number"
+            if node.name in ("random", "exp", "obter_tempo"): return "number"
             if node.name in ("range", "parse_ints"): return "list"
             return "unknown"
         if isinstance(node, IndexExpr): return "unknown"
@@ -220,7 +244,7 @@ class SemanticAnalyzer:
             self.validate_node(node.object)
             for arg in node.arguments: self.validate_node(arg)
         elif isinstance(node, FuncCallExpr):
-            if node.name not in self._functions and node.name not in ("exp", "random", "range", "len", "to_number", "parse_ints"):
+            if node.name not in self._functions and node.name not in ("exp", "random", "range", "len", "to_number", "parse_ints", "obter_tempo", "simular_trabalho"):
                 self._report(node.line, f"Funcao '{node.name}' nao declarada.")
             elif node.name in self._functions and len(self._functions[node.name].params) != len(node.arguments):
                 self._report(node.line, f"Funcao '{node.name}' espera {len(self._functions[node.name].params)} argumento(s), recebeu {len(node.arguments)}.")
@@ -246,6 +270,23 @@ class SemanticAnalyzer:
             pass
         elif isinstance(node, InputExpr):
             if node.prompt: self.validate_node(node.prompt)
+        elif isinstance(node, PureBlock):
+            old_pure = self._inside_pure
+            self._inside_pure = True
+            self.validate_node(node.body)
+            self._inside_pure = old_pure
+        elif isinstance(node, ImpureBlock):
+            if not self._inside_pure:
+                self._report(node.line, "A anotacao 'impure' so e permitida dentro de um bloco ou laco 'pure'.")
+            for stmt in node.statements:
+                self.validate_node(stmt)
+        elif isinstance(node, ForkBlock):
+            self.validate_node(node.body)
+        elif isinstance(node, JoinStmt):
+            pass
+
+    def get_symbol_table(self) -> List[Dict[str, any]]:
+        return list(self._symbol_history)
 
     def analyze(self, program: Program) -> bool:
         self._collect_declarations(program)

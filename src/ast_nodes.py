@@ -67,6 +67,28 @@ class ParBlock(ASTNode):
     line: int = 1
 
 @dataclass
+class PureBlock(ASTNode):
+    body: ASTNode
+    line: int = 1
+
+@dataclass
+class ImpureBlock(ASTNode):
+    statements: List[ASTNode] = field(default_factory=list)
+    line: int = 1
+
+@dataclass
+class ForkBlock(ASTNode):
+    body: ASTNode
+    task_name: Optional[str] = None
+    cores: Optional[ASTNode] = None
+    line: int = 1
+
+@dataclass
+class JoinStmt(ASTNode):
+    target_tasks: List[str] = field(default_factory=list)
+    line: int = 1
+
+@dataclass
 class IfStmt(ASTNode):
     condition: ASTNode
     then_branch: ASTNode
@@ -209,3 +231,49 @@ class IndexAssign(ASTNode):
 class Program(ASTNode):
     statements: List[ASTNode] = field(default_factory=list)
     line: int = 1
+
+
+def ast_to_dict(node: Optional[ASTNode]) -> Optional[dict]:
+    """Converte recursivamente a AST para um dicionário JSON hierárquico (padrão D3.js)."""
+    if node is None:
+        return None
+
+    node_type = node.__class__.__name__
+    details = ""
+    if hasattr(node, "name") and isinstance(getattr(node, "name"), str):
+        details = getattr(node, "name")
+    elif hasattr(node, "task_name") and getattr(node, "task_name"):
+        details = str(getattr(node, "task_name"))
+    elif hasattr(node, "op") and isinstance(getattr(node, "op"), str):
+        details = getattr(node, "op")
+    elif hasattr(node, "value") and not isinstance(getattr(node, "value"), ASTNode) and getattr(node, "value") is not None:
+        details = str(getattr(node, "value"))
+    elif hasattr(node, "method_name"):
+        details = str(getattr(node, "method_name"))
+    elif hasattr(node, "property_name"):
+        details = str(getattr(node, "property_name"))
+    elif hasattr(node, "class_name"):
+        details = str(getattr(node, "class_name"))
+
+    children = []
+    for attr_name, attr_val in node.__dict__.items():
+        if attr_name == "line":
+            continue
+        if isinstance(attr_val, ASTNode):
+            child_dict = ast_to_dict(attr_val)
+            if child_dict:
+                children.append(child_dict)
+        elif isinstance(attr_val, list):
+            for item in attr_val:
+                if isinstance(item, ASTNode):
+                    child_dict = ast_to_dict(item)
+                    if child_dict:
+                        children.append(child_dict)
+
+    return {
+        "name": f"{node_type} ({details})" if details else node_type,
+        "type": node_type,
+        "details": details,
+        "line": getattr(node, "line", 1),
+        "children": children,
+    }

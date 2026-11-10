@@ -24,6 +24,10 @@ class TokenType(Enum):
     RETURN    = auto()
     SEQ       = auto()
     PAR       = auto()
+    PURE      = auto()
+    IMPURE    = auto()
+    FORK      = auto()
+    JOIN      = auto()
     THIS      = auto()
     C_CHANNEL = auto()
     SEND      = auto()
@@ -65,6 +69,10 @@ KEYWORDS: dict[str, TokenType] = {
     "new":       TokenType.NEW,
     "seq":       TokenType.SEQ,
     "par":       TokenType.PAR,
+    "pure":      TokenType.PURE,
+    "impure":    TokenType.IMPURE,
+    "fork":      TokenType.FORK,
+    "join":      TokenType.JOIN,
     "if":        TokenType.IF,
     "else":      TokenType.ELSE,
     "while":     TokenType.WHILE,
@@ -147,6 +155,17 @@ class Lexer:
                 while self._peek().isalnum() or self._peek() == "_": ident += self._advance()
                 ttype = KEYWORDS.get(ident, TokenType.IDENTIFIER)
                 tokens.append(self._make_token(ttype, ident, start_line, start_col))
+            elif ch == "@":
+                self._advance()
+                if self._peek().isalpha() or self._peek() == "_":
+                    ident = ""
+                    while self._peek().isalnum() or self._peek() == "_": ident += self._advance()
+                    if ident in ("pure", "impure"):
+                        tokens.append(self._make_token(KEYWORDS[ident], f"@{ident}", start_line, start_col))
+                    else:
+                        tokens.append(self._make_token(TokenType.UNKNOWN, f"@{ident}", start_line, start_col))
+                else:
+                    tokens.append(self._make_token(TokenType.UNKNOWN, "@", start_line, start_col))
             elif ch.isdigit():
                 num = ""
                 while self._peek().isdigit(): num += self._advance()

@@ -1,0 +1,38 @@
+# Teste Integrado de Sanidade da Fase 1
+# Demonstração de: Pure, Impure, Fork e Join
+
+var soma_compartilhada = 0;
+
+print("--- Iniciando Loop Pure com Regiao Impure ---");
+
+pure for (var i = 0; i < 20; i = i + 1) {
+    var dobro = i * 2;
+    impure {
+        soma_compartilhada = soma_compartilhada + dobro;
+    }
+}
+
+print("Resultado da soma apos Pure/Impure: ", soma_compartilhada);
+
+print("--- Disparando Tarefas Concorrentes com Fork ---");
+
+var resultado_task1 = 0;
+var resultado_task2 = 0;
+
+fork tarefa_a {
+    resultado_task1 = 100 + 50;
+    print("Tarefa A concluida.");
+}
+
+fork tarefa_b {
+    resultado_task2 = 200 + 300;
+    print("Tarefa B concluida.");
+}
+
+print("Pai aguardando tarefas via Join...");
+join;
+
+print("Resultado Tarefa A: ", resultado_task1);
+print("Resultado Tarefa B: ", resultado_task2);
+print("--- Teste de Sanidade Fase 1 Finalizado com Sucesso! ---");
+
