@@ -1,17 +1,19 @@
-# Gramática Formal BNF — Linguagem MiniPar 2026.1
+# Gramática Formal BNF — Linguagem MiniPar 2026.2
 
-**Projeto:** MiniPar-Improvement — Compilador da Linguagem MiniPar 2026.1 Orientada a Objetos  
-**Autores:** Emanuele Vitória de Jesus Lima · Jose Lucas de Oliveira Quintela · Luiz Miguel de Melo Bomfim  
+**Projeto:** MiniPar 2026.2 — Compilador da Linguagem MiniPar com Paralelismo de Dados SPar (`pure`/`impure`), Concorrência (`fork`/`join`) e 2ª Interface Web Didática  
+**Equipe:** Ludson Almeida · Davi Melo · Iury Nogueira  
 **Instituição:** Universidade Federal de Alagoas — Instituto de Computação · Ciência da Computação  
 **Disciplina:** Compiladores — Prof. Arturo Hernandez Dominguez  
-**Repositório:** https://github.com/luizwhirl/minipar-improvement  
+**Base do Projeto:** Evolução do minipar-improvement  
 
 ---
 
-> Esta gramática foi derivada diretamente da implementação real do compilador
-> (arquivos `src/lexer.py`, `src/parser.py` e `src/ast_nodes.py`), cruzada com
-> o relatório técnico do projeto e as especificações formais fornecidas pelo professor.
-> Ela descreve **toda** a sintaxe aceita pelo compilador MiniPar 2026.1.
+> Esta gramática foi atualizada para a versão **MiniPar 2026.2**, derivada diretamente da
+> implementação real do compilador (`src/lexer.py`, `src/parser.py`, `src/ast_nodes.py`,
+> `src/semantic.py`, `src/tac.py` e `src/codegen.py`), incorporando o modelo de
+> anotações do artigo SPar (SBLP'21) para paralelismo de dados e o modelo de tarefas
+> concorrentes com fork e join para execução multi-core.
+> Ela descreve **toda** a sintaxe aceita pelo compilador MiniPar 2026.2.
 
 ---
 
@@ -62,11 +64,14 @@ Comentários iniciados por `#` são descartados pelo lexer antes da geração de
 class  extends  new  func  var
 if  else  while  do  for  in
 break  continue  return
-seq  par  this
+seq  par  pure  impure  fork  join  this
 c_channel  send  receive  input  print  matrix
 true  false
 number  int  string  bool  void  list  dict
 ```
+
+> **Nota 2026.2:** O compilador aceita tanto a sintaxe direta de palavra-chave (`pure`, `impure`)
+> quanto a notação com arroba (`@pure`, `@impure`), inspirada nas anotações da linguagem SPar.
 
 ### 2.2 Literais
 
@@ -191,6 +196,10 @@ class Cachorro extends Animal {
             | <atribuicao>
             | <bloco_seq>
             | <bloco_par>
+            | <bloco_pure>
+            | <bloco_impure>
+            | <bloco_fork>
+            | <comando_join>
             | <comando_if>
             | <comando_while>
             | <comando_do_while>
@@ -255,7 +264,11 @@ print("Valor:", x, "e", y);
 
 ---
 
-## 6. Blocos Sequencial e Paralelo
+## 6. Blocos e Primitivas de Concorrência e Paralelismo
+
+O MiniPar 2026.2 suporta dois modelos de paralelismo:
+1. **Paralelismo de Dados Anotado (Modelo SPar):** com as primitivas `pure` (para fatiamento de laços/cálculos independentes) e `impure` (para isolamento e proteção automática de regiões críticas com `std::mutex`).
+2. **Paralelismo de Tarefas e Concorrência:** com blocos `par`, disparo assíncrono de subtarefas em segundo plano com `fork` e barreira de sincronização com `join`.
 
 ### 6.1 Bloco Sequencial (SEQ)
 
@@ -285,6 +298,103 @@ par {
     seq { print("Thread B"); }
     seq { print("Thread C"); }
 }
+```
+
+### 6.3 Bloco e Laço Puro (PURE — Modelo SPar)
+
+Inspirado no artigo *High-Level Stream and Data Parallelism in C++ for Multi-Cores* (SBLP'21), a anotação `pure` (ou `@pure`) marca que o laço ou bloco subsequente é **funcionalmente puro** (não possui efeitos colaterais em memória compartilhada externa, ou escreve em posições mutuamente exclusivas de arrays/matrizes).
+
+O compilador transcreve a região anotada como um padrão **Map / Parallel For**, permitindo fatiar as iterações entre núcleos da CPU sem necessidade de sincronização manual.
+
+```bnf
+<bloco_pure> ::= "pure" <comando>
+               | "@pure" <comando>
+```
+
+**Exemplo:**
+
+```minipar
+pure for (var y = 0; y < altura; y = y + 1) {
+    for (var x = 0; x < largura; x = x + 1) {
+        var iter = calcular_mandelbrot(x, y);
+        matriz[y][x] = iter;
+    }
+}
+```
+
+### 6.4 Região Crítica com Mutex Lock (IMPURE — Modelo SPar)
+
+A anotação `impure` (ou `@impure`) delimita uma região com efeitos colaterais (ex: atualização de variável acumuladora compartilhada, operações de I/O na tela) que reside **dentro** de um contexto `pure`.
+
+**Regra Semântica Fundamental:**  
+> O analisador semântico reporta erro se `impure` for declarado fora de uma região `pure`.  
+> *Erro reportado: `A anotação 'impure' só é permitida dentro de um bloco ou laço 'pure'.`*
+
+Na geração de código C++20, o compilador "purifica" a região protegendo-a automaticamente com um lock seguro:
+`std::lock_guard<std::mutex> lock(__minipar_impure_mtx);` garantindo ausência total de condições de corrida (*race conditions*).
+
+```bnf
+<bloco_impure> ::= "impure" "{" { <comando> } "}"
+                 | "@impure" "{" { <comando> } "}"
+```
+
+**Exemplo:**
+
+```minipar
+var total_geral = 0;
+
+pure for (var i = 0; i < 1000; i = i + 1) {
+    var item = calcular_dado(i);
+    impure {
+        total_geral = total_geral + item;
+    }
+}
+```
+
+### 6.5 Disparo Assíncrono de Subtarefas (FORK)
+
+Dispara a execução de um bloco de código como uma subtarefa assíncrona em uma thread independente da CPU em segundo plano, sem bloquear a thread principal do programa. O nome da tarefa é opcional e serve para identificação didática e alocação.
+
+Na geração de código, a tarefa é registrada no pool `__active_fork_threads` do runtime C++20.
+
+```bnf
+<bloco_fork> ::= "fork" [ <IDENTIFIER> ] <comando>
+```
+
+**Exemplo:**
+
+```minipar
+fork nucleo_1 {
+    avaliar_atividades(0, 40);
+    print("Nucleo 1 concluiu!");
+}
+
+fork nucleo_2 {
+    avaliar_atividades(40, 80);
+    print("Nucleo 2 concluiu!");
+}
+```
+
+### 6.6 Barreira de Sincronização (JOIN)
+
+Atua como uma barreira de sincronização: bloqueia a thread chamadora até que todas as tarefas assíncronas disparadas previamente por blocos `fork` tenham finalizado completamente a sua execução.
+
+Na geração de código, percorre as threads ativas chamando `.join()` em cada uma e liberando os recursos.
+
+```bnf
+<comando_join> ::= "join" [ <lista_identificadores> ] ";"
+
+<lista_identificadores> ::= <IDENTIFIER> { "," <IDENTIFIER> }
+```
+
+**Exemplo:**
+
+```minipar
+fork tarefa_A { simular_trabalho(100); }
+fork tarefa_B { simular_trabalho(100); }
+
+join; # Bloqueia até que tarefa_A e tarefa_B terminem
+print("Todas as tarefas filhas foram finalizadas!");
 ```
 
 ---
@@ -776,9 +886,9 @@ A seguir a gramática completa em formato BNF, em ordem de definição:
 
 ```bnf
 (* ============================================================ *)
-(*       GRAMÁTICA BNF — LINGUAGEM MINIPAR 2026.1               *)
-(*       Compilador: minipar-improvement                        *)
-(*       Repositório: github.com/luizwhirl/minipar-improvement  *)
+(*       GRAMÁTICA BNF — LINGUAGEM MINIPAR 2026.2               *)
+(*       Equipe: Ludson Almeida, Davi Melo, Iury Nogueira       *)
+(*       UFAL - Compiladores (Prof. Arturo Hernandez)           *)
 (* ============================================================ *)
 
 
@@ -814,6 +924,10 @@ A seguir a gramática completa em formato BNF, em ordem de definição:
             | <atribuicao>
             | <bloco_seq>
             | <bloco_par>
+            | <bloco_pure>
+            | <bloco_impure>
+            | <bloco_fork>
+            | <comando_join>
             | <comando_if>
             | <comando_while>
             | <comando_do_while>
@@ -836,14 +950,23 @@ A seguir a gramática completa em formato BNF, em ordem de definição:
 <comando_return>    ::= "return" [ <expressao> ] ";"
 <comando_break>     ::= "break" ";"
 <comando_continue>  ::= "continue" ";"
+<comando_join>      ::= "join" [ <lista_identificadores> ] ";"
+
+<lista_identificadores> ::= <IDENTIFIER> { "," <IDENTIFIER> }
 
 
-(* ─── BLOCOS ─── *)
+(* ─── BLOCOS E PARALELISMO ─── *)
 
-<bloco_seq> ::= "seq" "{" { <comando> } "}"
-              | "{" { <comando> } "}"
+<bloco_seq>    ::= "seq" "{" { <comando> } "}"
+                 | "{" { <comando> } "}"
 
-<bloco_par> ::= "par" "{" { <comando> } "}"
+<bloco_par>    ::= "par" "{" { <comando> } "}"
+
+<bloco_pure>   ::= ( "pure" | "@pure" ) <comando>
+
+<bloco_impure> ::= ( "impure" | "@impure" ) "{" { <comando> } "}"
+
+<bloco_fork>   ::= "fork" [ <IDENTIFIER> ] <comando>
 
 
 (* ─── ESTRUTURAS DE CONTROLE ─── *)
@@ -1005,6 +1128,16 @@ O analisador semântico (`src/semantic.py`) usa inferência simples de tipos com
 | Método inexistente | `Método 'm' não declarado em 'C'.` |
 | Atributo inexistente | `Atributo 'a' não declarado em 'C'.` |
 | `break`/`continue` fora de laço | `'break' usado fora de laço de repetição.` |
+| **SPar:** `impure` fora de `pure` | `A anotação 'impure' só é permitida dentro de um bloco ou laço 'pure'.` |
+
+### Geração de Código Intermediário (TAC - 3 Endereços)
+
+| Construto MiniPar | Diretivas / Instruções TAC geradas |
+|-------------------|-----------------------------------|
+| `pure for (...)` | `BEGIN_PURE_MAP` ... `END_PURE_MAP` |
+| `impure { ... }` | `ACQUIRE_LOCK` ... `RELEASE_LOCK` |
+| `fork task { ... }` | `FORK_TASK task` ... |
+| `join;` | `JOIN_TASKS` |
 
 ### Geração de Código C++20
 
@@ -1015,6 +1148,12 @@ O analisador semântico (`src/semantic.py`) usa inferência simples de tipos com
 | `obj.metodo(args)` | `obj->metodo(args)` |
 | `obj.campo` | `obj->campo` |
 | `par { a; b; }` | `std::vector<std::thread>` + `emplace_back` + `join` |
+| `pure for (...)` | Paralelismo de Dados (Padrão Map) |
+| `impure { ... }` | `std::lock_guard<std::mutex> lock(__minipar_impure_mtx);` |
+| `fork task { ... }` | `__active_fork_threads.emplace_back([&]() { ... });` |
+| `join;` | Percorre `__active_fork_threads` chamando `.join()` em cada thread |
+| `obter_tempo()` | `std::chrono::duration_cast<std::chrono::microseconds>(...)` |
+| `simular_trabalho(ms)` | `std::this_thread::sleep_for(std::chrono::milliseconds(ms))` |
 | `c_channel(ip, porta)` | `std::make_shared<MiniParChannel>(ip, porta)` |
 | `send(canal, msg)` | `canal->sendData(__to_string(msg))` |
 | `receive(canal)` | `canal->receiveData()` |
@@ -1029,4 +1168,4 @@ O analisador semântico (`src/semantic.py`) usa inferência simples de tipos com
 
 ---
 
-*Gramática gerada em 15 de junho de 2026 — MiniPar-Improvement v2026.1*
+*Gramática atualizada em Novembro de 2026 — MiniPar v2026.2 (UFAL / Compiladores)*
