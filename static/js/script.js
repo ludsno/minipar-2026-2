@@ -27,6 +27,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnClear         = document.getElementById("btn-clear");
     const tabs             = document.querySelectorAll(".tab");
 
+    // Gerenciador de Tema (Claro / Escuro)
+    const btnThemeToggleDev = document.getElementById("btn-theme-toggle-dev");
+    const themeDevIcon = document.getElementById("theme-dev-icon");
+    const themeDevLabel = document.getElementById("theme-dev-label");
+
+    function applyThemeDev(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("minipar_theme", theme);
+
+        const cmTheme = (theme === "light") ? "neo" : "dracula";
+        editorMinipar.setOption("theme", cmTheme);
+        editorCpp.setOption("theme", cmTheme);
+        editorTac.setOption("theme", cmTheme);
+
+        if (theme === "light") {
+            if (themeDevIcon) themeDevIcon.textContent = "🌙";
+            if (themeDevLabel) themeDevLabel.textContent = "Tema Escuro";
+        } else {
+            if (themeDevIcon) themeDevIcon.textContent = "☀️";
+            if (themeDevLabel) themeDevLabel.textContent = "Tema Claro";
+        }
+    }
+
+    if (btnThemeToggleDev) {
+        btnThemeToggleDev.addEventListener("click", () => {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+            const newTheme = currentTheme === "dark" ? "light" : "dark";
+            applyThemeDev(newTheme);
+        });
+    }
+
+    const savedThemeDev = localStorage.getItem("minipar_theme") || "dark";
+    applyThemeDev(savedThemeDev);
+
     let currentTestSpec = null;
     let progressPollTimer = null;
     let lastLogCount = 0;

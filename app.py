@@ -1,8 +1,22 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file, abort
 import subprocess
 import os
 import sys
 import glob
+import time
+import re
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(BASE_DIR, 'src')
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+from lexer import Lexer, TokenType
+from parser import Parser
+from semantic import SemanticAnalyzer
+from tac import TACGenerator
+from codegen import CppCodeGenerator
+from ast_nodes import ast_to_dict
 
 from test_orchestrator import (
     get_spec_summary,
@@ -29,9 +43,95 @@ TEMP_DIR = 'temp_code'
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def categorize_token(tok_type: TokenType) -> str:
+    name = tok_type.name
+    if name in ('PURE', 'IMPURE'):
+        return 'Anotação SPar'
+    if name in ('FORK', 'JOIN', 'SEQ', 'PAR'):
+        return 'Paralelismo & Concorrência'
+    if name in ('CLASS', 'EXTENDS', 'NEW', 'FUNC', 'THIS'):
+        return 'Orientação a Objetos'
+    if name in ('IF', 'ELSE', 'WHILE', 'DO', 'FOR', 'IN', 'BREAK', 'CONTINUE', 'RETURN'):
+        return 'Estrutura de Controle'
+    if name in ('VAR', 'TYPE'):
+        return 'Declaração & Tipo'
+    if name in ('PRINT', 'INPUT', 'C_CHANNEL', 'SEND', 'RECEIVE', 'MATRIX'):
+        return 'E/S & Comunicação'
+    if name in ('NUMBER',):
+        return 'Literal Numérico'
+    if name in ('STRING_LITERAL',):
+        return 'Literal Texto'
+    if name in ('BOOL_LITERAL',):
+        return 'Literal Booleano'
+    if name in ('IDENTIFIER',):
+        return 'Identificador'
+    if name in ('PLUS', 'MINUS', 'STAR', 'SLASH', 'MOD', 'ASSIGN', 'EQ', 'NEQ', 'NOT', 'AND', 'OR', 'LT', 'GT', 'LTE', 'GTE'):
+        return 'Operador'
+    if name in ('LPAREN', 'RPAREN', 'LBRACE', 'RBRACE', 'LBRACKET', 'RBRACKET', 'DOT', 'SEMICOLON', 'COMMA'):
+        return 'Delimitador'
+    if name == 'END_OF_FILE':
+        return 'Fim de Arquivo'
+    return 'Outro'
+
+
+def extract_benchmark_metrics(output_text: str) -> dict:
+    metrics = {
+        "is_benchmark": False,
+        "speedup": None,
+        "time_seq": None,
+        "time_par": None,
+        "reduction_pct": None,
+        "cores": None,
+    }
+    if not output_text:
+        return metrics
+
+    m_speedup = re.search(r'Speedup(?:\s+obtido)?[:=]\s*([0-9]+(?:\.[0-9]+)?)x?', output_text, re.IGNORECASE)
+    if m_speedup:
+        metrics["speedup"] = float(m_speedup.group(1))
+        metrics["is_benchmark"] = True
+
+    m_seq = re.search(r'Tempo\s+Sequencial(?:\s+\(.*?\))?[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:s|seg|ms)?', output_text, re.IGNORECASE)
+    if m_seq:
+        metrics["time_seq"] = float(m_seq.group(1))
+        metrics["is_benchmark"] = True
+
+    m_par = re.search(r'Tempo\s+Paralelo(?:\s+\(.*?\))?[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:s|seg|ms)?', output_text, re.IGNORECASE)
+    if m_par:
+        metrics["time_par"] = float(m_par.group(1))
+        metrics["is_benchmark"] = True
+
+    m_red = re.search(r'Reducao(?:\s+de\s+tempo)?[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*%', output_text, re.IGNORECASE)
+    if m_red:
+        metrics["reduction_pct"] = float(m_red.group(1))
+
+    m_cores = re.search(r'([0-9]+)\s+(?:nucleos|núcleos|threads|cores)', output_text, re.IGNORECASE)
+    if m_cores:
+        metrics["cores"] = int(m_cores.group(1))
+
+    return metrics
+
+
+def find_executable(base_name: str) -> str | None:
+    candidate_paths = [
+        os.path.join(OUTPUT_DIR, f"{base_name}.exe"),
+        os.path.join(OUTPUT_DIR, f"{base_name}"),
+        os.path.join(OUTPUT_DIR, base_name),
+    ]
+    for p in candidate_paths:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/didatico')
+def didatico():
+    return render_template('didatico.html')
 
 @app.route('/api/tests', methods=['GET'])
 def get_tests():
@@ -110,6 +210,183 @@ def session_clear():
     return jsonify({"success": True})
 
 
+@app.route('/api/inspect', methods=['POST'])
+def inspect_code():
+    data = request.json or {}
+    code = data.get('code', '')
+    filename = data.get('filename', 'codigo.minipar')
+    
+    response = {
+        "success": True,
+        "filename": filename,
+        "phase": "complete",
+        "tokens": [],
+        "tokens_count": 0,
+        "ast": None,
+        "symbols": [],
+        "semantic_checks": {
+            "valid": True,
+            "errors": [],
+            "pure_blocks": 0,
+            "impure_blocks": 0,
+            "fork_blocks": 0,
+            "join_stmts": 0,
+            "classes": 0,
+            "functions": 0,
+            "symbol_count": 0,
+        },
+        "tac": "",
+        "cpp": "",
+        "error": None,
+    }
+
+    # 1. Fase Léxica
+    try:
+        lexer = Lexer(code)
+        tokens = lexer.tokenize()
+        response["tokens"] = [
+            {
+                "index": i + 1,
+                "type": t.type.name,
+                "category": categorize_token(t.type),
+                "lexeme": t.lexeme,
+                "line": t.line,
+                "col": t.col,
+            }
+            for i, t in enumerate(tokens)
+            if t.type != TokenType.END_OF_FILE
+        ]
+        response["tokens_count"] = len(response["tokens"])
+    except Exception as e:
+        response["success"] = False
+        response["phase"] = "lexer"
+        response["error"] = f"Erro Léxico: {str(e)}"
+        return jsonify(response)
+
+    # 2. Fase Sintática
+    program = None
+    try:
+        parser = Parser(tokens)
+        program = parser.parse()
+        response["ast"] = ast_to_dict(program)
+    except Exception as e:
+        response["success"] = False
+        response["phase"] = "parser"
+        response["error"] = f"Erro Sintático: {str(e)}"
+        return jsonify(response)
+
+    # 3. Fase Semântica
+    try:
+        semantic = SemanticAnalyzer()
+        is_sem_valid = semantic.analyze(program)
+        symbols = semantic.get_symbol_table()
+        sem_errors = semantic.get_errors()
+
+        pure_count = 0
+        impure_count = 0
+        fork_count = 0
+        join_count = 0
+        class_count = 0
+        func_count = 0
+
+        def inspect_ast_features(node):
+            nonlocal pure_count, impure_count, fork_count, join_count, class_count, func_count
+            if node is None:
+                return
+            ntype = node.__class__.__name__
+            if ntype == "PureBlock": pure_count += 1
+            elif ntype == "ImpureBlock": impure_count += 1
+            elif ntype == "ForkBlock": fork_count += 1
+            elif ntype == "JoinStmt": join_count += 1
+            elif ntype == "ClassDecl": class_count += 1
+            elif ntype == "FuncDecl": func_count += 1
+
+            for _, val in getattr(node, "__dict__", {}).items():
+                if isinstance(val, list):
+                    for item in val:
+                        if hasattr(item, "__dict__"):
+                            inspect_ast_features(item)
+                elif hasattr(val, "__dict__"):
+                    inspect_ast_features(val)
+
+        inspect_ast_features(program)
+
+        response["symbols"] = symbols
+        response["semantic_checks"] = {
+            "valid": is_sem_valid and len(sem_errors) == 0,
+            "errors": sem_errors,
+            "pure_blocks": pure_count,
+            "impure_blocks": impure_count,
+            "fork_blocks": fork_count,
+            "join_stmts": join_count,
+            "classes": class_count,
+            "functions": func_count,
+            "symbol_count": len(symbols),
+        }
+        if not is_sem_valid or sem_errors:
+            response["success"] = False
+            response["phase"] = "semantic"
+            response["error"] = "; ".join(sem_errors) if sem_errors else "Erro na Análise Semântica."
+    except Exception as e:
+        response["success"] = False
+        response["phase"] = "semantic"
+        response["error"] = f"Erro Semântico: {str(e)}"
+        return jsonify(response)
+
+    # 4. Geração de TAC
+    try:
+        tac_gen = TACGenerator()
+        response["tac"] = tac_gen.generate_text(program)
+    except Exception as e:
+        response["tac"] = f"# Erro ao gerar TAC: {str(e)}"
+
+    # 5. Geração de C++
+    try:
+        codegen = CppCodeGenerator()
+        response["cpp"] = codegen.generate_cpp_code(program)
+    except Exception as e:
+        response["cpp"] = f"// Erro ao gerar C++: {str(e)}"
+
+    return jsonify(response)
+
+
+@app.route('/api/download_exe', methods=['GET', 'POST'])
+@app.route('/api/download_exe/<path:filename>', methods=['GET'])
+def download_exe(filename=None):
+    if not filename:
+        if request.is_json and request.json:
+            filename = request.json.get('filename')
+        else:
+            filename = request.args.get('filename')
+            
+    if not filename:
+        filename = 'ide_temp.minipar'
+        
+    base_name = os.path.basename(filename).replace('.minipar', '').replace('.exe', '')
+    exe_path = find_executable(base_name)
+    
+    # Se ainda não existe, tenta compilar caso o código-fonte exista
+    if not exe_path:
+        src_path = os.path.join(TESTS_DIR, f"{base_name}.minipar")
+        if not os.path.exists(src_path):
+            src_path = os.path.join(TEMP_DIR, f"{base_name}.minipar")
+            
+        if os.path.exists(src_path):
+            subprocess.run([sys.executable, 'main.py', src_path, base_name], capture_output=True, text=True, timeout=25)
+            exe_path = find_executable(base_name)
+            
+    if exe_path and os.path.isfile(exe_path):
+        download_name = f"{base_name}.exe"
+        return send_file(
+            os.path.abspath(exe_path),
+            as_attachment=True,
+            download_name=download_name,
+            mimetype="application/octet-stream"
+        )
+        
+    return jsonify({"error": f"Executável para '{base_name}' não encontrado e não pôde ser gerado."}), 404
+
+
 @app.route('/api/compile', methods=['POST'])
 def compile_code():
     data = request.json
@@ -132,10 +409,10 @@ def compile_code():
         # 1. FASE DE COMPILAÇÃO (Gera TAC e C++)
         # ==========================================
         process = subprocess.run(
-            ['python', 'main.py', file_path], 
+            [sys.executable, 'main.py', file_path, base_name], 
             capture_output=True, 
             text=True, 
-            timeout=15
+            timeout=25
         )
         
         # Junta logs do sistema
@@ -144,6 +421,15 @@ def compile_code():
             full_output += "\n" + process.stderr
             
         success = process.returncode == 0
+        benchmark_data = {
+            "is_benchmark": False,
+            "speedup": None,
+            "time_seq": None,
+            "time_par": None,
+            "reduction_pct": None,
+            "cores": None,
+            "execution_time_total": None
+        }
 
         # ==========================================
         # 2. FASE DE EXECUÇÃO (Roda o Binário C++)
@@ -151,27 +437,32 @@ def compile_code():
         if success:
             set_session_phase("compiling", "Compilação concluída.", percent=80)
             append_session_log("Compilação concluída — executando binário.")
-            exe_ext = ".exe" if sys.platform == "win32" else ""
-            exe_path = os.path.join(OUTPUT_DIR, f"{base_name}{exe_ext}")
+            exe_path = find_executable(base_name)
             
-            if os.path.exists(exe_path):
+            if exe_path and os.path.exists(exe_path):
                 full_output += f"\n--- Executando {base_name} ---\n"
                 set_session_phase("executing", f"Executando {base_name}...", percent=90)
                 try:
                     stdin_data = None
                     if stdin_lines:
                         stdin_data = "\n".join(stdin_lines) + "\n"
+                    
+                    t_start = time.perf_counter()
                     exe_proc = subprocess.run(
                         [os.path.abspath(exe_path)], 
                         input=stdin_data,
                         capture_output=True, 
                         text=True, 
-                        timeout=30
+                        timeout=35
                     )
+                    t_elapsed = time.perf_counter() - t_start
                     full_output += exe_proc.stdout
                     if exe_proc.stderr:
                         full_output += "\n[ERRO NA EXECUÇÃO]:\n" + exe_proc.stderr
                     record_execution_output(exe_proc.stdout or "")
+                    
+                    benchmark_data = extract_benchmark_metrics(exe_proc.stdout or "")
+                    benchmark_data["execution_time_total"] = round(t_elapsed, 4)
                 except subprocess.TimeoutExpired:
                     full_output += "\n[ERRO] Tempo limite de execução excedido (O programa entrou em loop infinito ou aguarda entrada de dados do usuário?)."
                     success = False
@@ -209,7 +500,8 @@ def compile_code():
             "stderr": full_output if not success else "",
             "cpp": cpp_code,
             "tac": tac_code,
-            "success": success
+            "success": success,
+            "benchmark": benchmark_data
         })
         
     except subprocess.TimeoutExpired:
