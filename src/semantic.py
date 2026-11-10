@@ -24,6 +24,7 @@ class SemanticAnalyzer:
         self._scopes: List[Dict[str, Symbol]] = []
         self._symbol_history: List[Dict[str, any]] = []
         self._has_errors = False
+        self.errors: List[str] = []
         self._current_function: Optional[str] = None
         self._current_class: Optional[str] = None
         self._classes: Dict[str, Symbol] = {}
@@ -54,7 +55,9 @@ class SemanticAnalyzer:
 
     def _define_symbol(self, name: str, type_: str, line: int, params: Optional[List[str]] = None) -> None:
         if name in self._scopes[-1]:
-            print(f"[ERRO SEMANTICO] Linha {line}{self._get_context()}: Variavel '{name}' ja declarada.", file=sys.stderr)
+            msg = f"Linha {line}{self._get_context()}: Variavel '{name}' ja declarada."
+            print(f"[ERRO SEMANTICO] {msg}", file=sys.stderr)
+            self.errors.append(msg)
             self._has_errors = True
         else:
             self._scopes[-1][name] = Symbol(name=name, type=type_, params=params or [])
@@ -72,7 +75,9 @@ class SemanticAnalyzer:
         return None
 
     def _report(self, line: int, message: str) -> None:
-        print(f"[ERRO SEMANTICO] Linha {line}{self._get_context()}: {message}", file=sys.stderr)
+        msg = f"Linha {line}{self._get_context()}: {message}"
+        print(f"[ERRO SEMANTICO] {msg}", file=sys.stderr)
+        self.errors.append(msg)
         self._has_errors = True
 
     def _infer_type(self, node: Optional[ASTNode]) -> str:
@@ -287,6 +292,9 @@ class SemanticAnalyzer:
 
     def get_symbol_table(self) -> List[Dict[str, any]]:
         return list(self._symbol_history)
+
+    def get_errors(self) -> List[str]:
+        return list(self.errors)
 
     def analyze(self, program: Program) -> bool:
         self._collect_declarations(program)

@@ -6,6 +6,7 @@
     <title>Minipar IDE</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/neo.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -23,6 +24,10 @@
                     <span id="current-file">ide_temp.minipar</span>
                 </div>
                 <div class="actions">
+                    <button id="btn-theme-toggle-dev" class="btn secondary" style="display: inline-flex; align-items: center; gap: 6px;" title="Alternar entre Tema Claro e Escuro">
+                        <span id="theme-dev-icon">☀️</span> <span id="theme-dev-label">Tema Claro</span>
+                    </button>
+                    <a href="/didatico" class="btn secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #50fa7b; border-color: rgba(80, 250, 123, 0.4);">🎓 Modo Didático (2026.2)</a>
                     <button id="btn-run" class="btn primary">▶ Compile &amp; Run</button>
                     <button id="btn-clear" class="btn secondary">Clear</button>
                 </div>

@@ -273,7 +273,7 @@ class CppCodeGenerator:
             return f"{self._translate_expression(node.target)} = {self._translate_expression(node.value)}"
         return self._translate_expression(node)
 
-    def generate(self, program: Program, output_name: str) -> bool:
+    def generate_cpp_code(self, program: Program) -> str:
         cpp_code = _CPP_HEADER
         
         for node in program.statements:
@@ -310,7 +310,10 @@ class CppCodeGenerator:
                     for stmt in node.statements: cpp_code += self._translate_statement(stmt, "    ")
                 else: cpp_code += self._translate_statement(node, "    ")
         cpp_code += "\n    return 0;\n}\n"
+        return cpp_code
 
+    def generate(self, program: Program, output_name: str) -> bool:
+        cpp_code = self.generate_cpp_code(program)
         os.makedirs("output", exist_ok=True)
         cpp_path = os.path.join("output", f"{output_name}.cpp")
         exe_path = os.path.join("output", f"{output_name}.exe")
@@ -318,7 +321,10 @@ class CppCodeGenerator:
         with open(cpp_path, "w", encoding="utf-8") as f: f.write(cpp_code)
         
         print("[CODEGEN] Compilando via g++ com -std=c++20 e -O3...")
-        result = subprocess.run(["g++", "-std=c++20", "-O3", cpp_path, "-o", exe_path, "-pthread", "-lws2_32"])
+        cmd = ["g++", "-std=c++20", "-O3", cpp_path, "-o", exe_path, "-pthread"]
+        if sys.platform == "win32":
+            cmd.append("-lws2_32")
+        result = subprocess.run(cmd)
         if result.returncode == 0:
             print(f"[SUCESSO] Executavel: {exe_path}")
             return True
