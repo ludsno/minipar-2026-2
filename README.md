@@ -4,8 +4,8 @@
 **Professor:** Arturo Hernandez Dominguez  
 **Equipe de Desenvolvimento (2026.2):**  
 - **Ludson Almeida** — [ludsno](https://github.com/ludsno)  
-- **Davi Melo** — [davimelo7](https://github.com/davimelo7)  
-- **Iury Nogueira** — [IuryNogueira](https://github.com/IuryNogueira)  
+- **Davi Melo** — [davimelo7](https://github.com/DsML01)
+- **Iury Nogueira** — [Iury Nogueira](https://github.com/IuryyNogueira)
 
 *(Base herdada e evoluída a partir do `minipar-improvement` de 2026.1)*
 
