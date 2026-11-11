@@ -21,8 +21,10 @@ from test_orchestrator import (
 
 def executar_binario(output_name: str, interactive: bool = False) -> str:
     """Executa o binário. Modo interativo quando o programa usa input()."""
-    exe_ext = ".exe" if sys.platform == "win32" else ""
-    exe_path = os.path.join("output", f"{output_name}{exe_ext}")
+    # O codegen sempre gera "output/<nome>.exe" (inclusive no Linux/WSL);
+    # o caminho sem extensão fica como alternativa.
+    candidatos = [os.path.join("output", f"{output_name}.exe"), os.path.join("output", output_name)]
+    exe_path = next((p for p in candidatos if os.path.isfile(p)), candidatos[0])
 
     if not os.path.exists(exe_path):
         print(f"[ERRO] Executavel {exe_path} nao encontrado apos compilacao.")

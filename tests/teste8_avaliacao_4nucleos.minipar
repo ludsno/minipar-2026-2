@@ -1,96 +1,143 @@
 # ==============================================================================
-# TESTE 8: Avaliação de Atividades Didáticas em Paralelo (4 Núcleos de CPU)
-# Professor + 3 Monitores avaliando 160 tarefas acadêmicas
-# Demonstração de Speedup e redução de tempo no MiniPar 2026.2
+# TESTE 8: Avaliacao de Atividades Didaticas em Paralelo (4 Nucleos de CPU)
+# Professor + 3 Monitores avaliando 160 atividades (40 alunos x 4 atividades)
+#
+# Traducao para MiniPar do programa Python do enunciado:
+#   docs/referencia_python/Teste8-Avaliacao-Atividades-Versao-Uso-de-4Nucleos.py
+# - mesmo gerador pseudoaleatorio (LCG, mesma semente e mesmas constantes);
+# - mesma carga de CPU por atividade: int(segundos * 1500000) iteracoes de soma;
+# - os 4 processos do Python viram subtarefas fork alocadas nos nucleos 0 a 3
+#   (fork @nucleo); a fila de resultados vira o valor devolvido por cada
+#   subtarefa, coletado depois do join.
+#
+# Execucao: 1 computador, 4 nucleos (fork @nucleo(0..3)). Entrada: nenhuma.
 # ==============================================================================
 
-func simular_correcao(iteracoes) {
-    simular_trabalho(15);
-    return 1;
-}
+# --- 1.1 Gerador de Numeros Pseudoaleatorios (LCG), sem biblioteca ---
+# Mesmo gerador do Python: estado = (estado * 1103515245 + 12345) & 0x7FFFFFFF.
+# Para valores positivos, "& 0x7FFFFFFF" e o mesmo que "% 2147483648".
+class GeradorAleatorio {
+    var estado = 123456789;
 
-print("Total de Atividades a Avaliar: 160 (40 alunos x 4 atividades)");
-
-# ------------------------------------------------------------------------------
-# 1. Execução Sequencial (Apenas 1 Núcleo / Professor)
-# ------------------------------------------------------------------------------
-print("\n--- 1. Executando Modo Sequencial (Apenas 1 Nucleo / Professor) ---");
-var t_ini_seq = obter_tempo();
-
-var tarefas_seq = 0;
-while (tarefas_seq < 160) {
-    var c = simular_correcao(50000);
-    tarefas_seq = tarefas_seq + 1;
-}
-
-var t_fim_seq = obter_tempo();
-var tempo_seq = t_fim_seq - t_ini_seq;
-print("Tempo Sequencial Concluido em: ", tempo_seq, " segundos");
-
-# ------------------------------------------------------------------------------
-# 2. Execução Paralela (4 Núcleos Dedicados via Fork / Join)
-# ------------------------------------------------------------------------------
-print("\n--- 2. Executando Modo Paralelo (4 Nucleos Dedicados: Professor + 3 Monitores) ---");
-var t_ini_par = obter_tempo();
-
-# Núcleo 1: Professor (40 atividades)
-fork nucleo_1_professor {
-    var t1 = 0;
-    while (t1 < 40) {
-        var c1 = simular_correcao(50000);
-        t1 = t1 + 1;
+    func uniforme(minimo, maximo) {
+        this.estado = (this.estado * 1103515245 + 12345) % 2147483648;
+        var fracao = this.estado / 2147483647.0;
+        return minimo + (maximo - minimo) * fracao;
     }
-    print("[Professor] Concluiu lote de 40 atividades.");
-}
 
-# Núcleo 2: Monitor 1 (40 atividades)
-fork nucleo_2_monitor1 {
-    var t2 = 0;
-    while (t2 < 40) {
-        var c2 = simular_correcao(50000);
-        t2 = t2 + 1;
+    # Avanca o gerador 'passos' numeros (posiciona cada nucleo na sua fatia)
+    func avancar(passos) {
+        var k = 0;
+        while (k < passos) {
+            this.estado = (this.estado * 1103515245 + 12345) % 2147483648;
+            k = k + 1;
+        }
     }
-    print("[Monitor 1] Concluiu lote de 40 atividades.");
 }
 
-# Núcleo 3: Monitor 2 (40 atividades)
-fork nucleo_3_monitor2 {
-    var t3 = 0;
-    while (t3 < 40) {
-        var c3 = simular_correcao(50000);
-        t3 = t3 + 1;
+# --- 1.2 Simulacao de Carga de CPU (substituindo time.sleep) ---
+# Mesmo laco do Python: soma += i, repetido int(segundos * 1500000) vezes
+# ("i + 1 <= limite" equivale a "i < int(limite)"). A soma e devolvida para que
+# o otimizador do g++ (-O3) nao elimine o laco.
+func simular_atraso(segundos) {
+    var limite = segundos * 1500000;
+    var soma = 0.0;
+    var i = 0;
+    while (i + 1 <= limite) {
+        soma = soma + i;
+        i = i + 1;
     }
-    print("[Monitor 2] Concluiu lote de 40 atividades.");
+    return soma;
 }
 
-# Núcleo 4: Monitor 3 (40 atividades)
-fork nucleo_4_monitor3 {
-    var t4 = 0;
-    while (t4 < 40) {
-        var c4 = simular_correcao(50000);
-        t4 = t4 + 1;
+# ==============================================================================
+# PASSO 3: FUNCOES DE TRABALHO DOS NUCLEOS
+# ==============================================================================
+
+# Simula a correcao de uma atividade (tempo aleatorio entre 0.05 e 0.15 "s")
+func avaliar_atividade(gerador) {
+    var tempo_correcao = gerador.uniforme(0.05, 0.15);
+    return simular_atraso(tempo_correcao);
+}
+
+# Executado de forma independente por cada nucleo: corrige as atividades de
+# indice [inicio, fim) e devolve a soma de verificacao do trabalho feito.
+func trabalhador_nucleo(inicio, fim) {
+    var gerador = new GeradorAleatorio();
+    gerador.avancar(inicio);
+    var verificacao = 0.0;
+    var tarefa = inicio;
+    while (tarefa < fim) {
+        verificacao = verificacao + avaliar_atividade(gerador);
+        tarefa = tarefa + 1;
     }
-    print("[Monitor 3] Concluiu lote de 40 atividades.");
+    return verificacao;
 }
 
+# ==============================================================================
+# PASSO 2 e 4: CENARIO, EXECUCAO E BENCHMARK
+# ==============================================================================
+
+var NUM_ALUNOS = 40;
+var ATIVIDADES_POR_ALUNO = 4;
+var TOTAL_ATIVIDADES = NUM_ALUNOS * ATIVIDADES_POR_ALUNO;   # 160 atividades
+
+print("Total de Atividades a Avaliar:", TOTAL_ATIVIDADES, "(40 alunos x 4 atividades)");
+print("");
+
+# --- 3.1 Execucao Sequencial: 1 unico nucleo (Professor) faz as 160 ---
+print("--- 1. Executando Modo Sequencial (Apenas 1 Nucleo / Professor) ---");
+var inicio_seq = obter_tempo();
+var verificacao_seq = trabalhador_nucleo(0, TOTAL_ATIVIDADES);
+var tempo_seq = obter_tempo() - inicio_seq;
+print("Tempo Sequencial Concluido em:", tempo_seq, "segundos");
+print("");
+
+# --- 3.2 Execucao Paralela com Alocacao Manual de Nucleos (Fork & Join) ---
+print("--- 2. Executando Modo Paralelo (4 Nucleos Dedicados: Professor + 3 Monitores) ---");
+var tamanho_fatia = TOTAL_ATIVIDADES / 4;   # 40 atividades por avaliador
+var resultado_professor = 0.0;
+var resultado_monitor1 = 0.0;
+var resultado_monitor2 = 0.0;
+var resultado_monitor3 = 0.0;
+var inicio_par = obter_tempo();
+
+# ETAPA 1 (FORK): 1 subtarefa por avaliador, cada uma em um nucleo da CPU
+fork professor @nucleo(0) {
+    resultado_professor = trabalhador_nucleo(0, tamanho_fatia);
+}
+fork monitor_1 @nucleo(1) {
+    resultado_monitor1 = trabalhador_nucleo(tamanho_fatia, 2 * tamanho_fatia);
+}
+fork monitor_2 @nucleo(2) {
+    resultado_monitor2 = trabalhador_nucleo(2 * tamanho_fatia, 3 * tamanho_fatia);
+}
+fork monitor_3 @nucleo(3) {
+    resultado_monitor3 = trabalhador_nucleo(3 * tamanho_fatia, 4 * tamanho_fatia);
+}
+
+# ETAPA 2 (JOIN): espera os 4 nucleos e junta o trabalho de cada um
 join;
+var tempo_par = obter_tempo() - inicio_par;
+var verificacao_par = resultado_professor + resultado_monitor1 + resultado_monitor2 + resultado_monitor3;
+print("Tempo Paralelo Concluido em:  ", tempo_par, "segundos");
+print("");
 
-var t_fim_par = obter_tempo();
-var tempo_par = t_fim_par - t_ini_par;
-print("Tempo Paralelo Concluido em:   ", tempo_par, " segundos");
+if (verificacao_seq == verificacao_par) {
+    print("Verificacao (join): as 160 correcoes paralelas conferem com as sequenciais (OK)");
+} else {
+    print("Verificacao (join): RESULTADOS DIFERENTES");
+}
 
-# ------------------------------------------------------------------------------
-# 3. Benchmark de Desempenho
-# ------------------------------------------------------------------------------
+# --- 3. Metricas do Benchmark ---
 var speedup = tempo_seq / tempo_par;
-var reducao = (1.0 - (tempo_par / tempo_seq)) * 100.0;
+var reducao_pct = ((tempo_seq - tempo_par) / tempo_seq) * 100;
 
-print("\n==========================================");
-print("BENCHMARK DE DESEMPENHO (TESTE 8)");
 print("==========================================");
-print("Nucleos Utilizados (Paralelo) : 4");
-print("Tempo Sequencial             : ", tempo_seq, " s");
-print("Tempo Paralelo               : ", tempo_par, " s");
-print("Aceleracao (Speedup)         : ", speedup, "x mais rapido!");
-print("Reducao no tempo             : ", reducao, "% de economia");
+print("         BENCHMARK DE DESEMPENHO          ");
+print("==========================================");
+print("Tempo Sequencial :", tempo_seq, "s");
+print("Tempo Paralelo   :", tempo_par, "s");
+print("Aceleracao       :", speedup, "x mais rapido!");
+print("Reducao no tempo :", reducao_pct, "% de economia");
 print("==========================================");

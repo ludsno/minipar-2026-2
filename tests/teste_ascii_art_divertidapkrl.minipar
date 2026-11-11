@@ -1,3 +1,12 @@
+# ==============================================================================
+# TESTE ADICIONAL: Arte ASCII — Triangulo de Sierpinski por Automato Celular
+# Cada linha nasce da anterior: uma celula fica preenchida se exatamente um dos
+# seus dois vizinhos de cima estiver preenchido (regra do XOR / regra 90).
+#
+# Execucao: 1 computador. Entrada: nenhuma.
+# Saida esperada: um triangulo de Sierpinski com 32 linhas.
+# ==============================================================================
+
 seq {
     print("========================================");
     print("  FRACTAL DE SIERPINSKI (Automato)      ");

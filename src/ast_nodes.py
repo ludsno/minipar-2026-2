@@ -1,8 +1,17 @@
+"""
+Nós da Árvore Sintática Abstrata (AST) do MiniPar 2026.2.
+
+Cada construção da linguagem é uma dataclass (ex.: IfStmt, ForStmt, PureBlock,
+ForkBlock). O Analisador Sintático cria a árvore; o Semântico, o Gerador de TAC e
+o Gerador de C++ a percorrem. `ast_to_dict` converte a árvore em JSON
+hierárquico para o desenho gráfico (D3.js) da interface didática.
+"""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 class ASTNode:
+    """Classe base de todos os nós; `line` é a linha do código-fonte (usada nas mensagens de erro)."""
     line: int = 1
 
 @dataclass
@@ -78,9 +87,16 @@ class ImpureBlock(ASTNode):
 
 @dataclass
 class ForkBlock(ASTNode):
+    """Subtarefa assíncrona: fork [nome] [@nucleo(n) | @computador(ip, porta)] comando.
+
+    alloc_kind: None (thread comum), "nucleo" (thread fixada em um núcleo da CPU)
+    ou "computador" (subtarefa executada por outro computador/processo).
+    alloc_args: argumentos da alocação ([n] ou [ip, porta] ou [canal]).
+    """
     body: ASTNode
     task_name: Optional[str] = None
-    cores: Optional[ASTNode] = None
+    alloc_kind: Optional[str] = None
+    alloc_args: List[ASTNode] = field(default_factory=list)
     line: int = 1
 
 @dataclass
@@ -242,8 +258,10 @@ def ast_to_dict(node: Optional[ASTNode]) -> Optional[dict]:
     details = ""
     if hasattr(node, "name") and isinstance(getattr(node, "name"), str):
         details = getattr(node, "name")
-    elif hasattr(node, "task_name") and getattr(node, "task_name"):
-        details = str(getattr(node, "task_name"))
+    elif hasattr(node, "task_name") and (getattr(node, "task_name") or getattr(node, "alloc_kind", None)):
+        details = str(getattr(node, "task_name") or "")
+        if getattr(node, "alloc_kind", None):
+            details = f"{details} @{node.alloc_kind}".strip()
     elif hasattr(node, "op") and isinstance(getattr(node, "op"), str):
         details = getattr(node, "op")
     elif hasattr(node, "value") and not isinstance(getattr(node, "value"), ASTNode) and getattr(node, "value") is not None:

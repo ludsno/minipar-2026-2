@@ -72,6 +72,8 @@ number  int  string  bool  void  list  dict
 
 > **Nota 2026.2:** O compilador aceita tanto a sintaxe direta de palavra-chave (`pure`, `impure`)
 > quanto a notação com arroba (`@pure`, `@impure`), inspirada nas anotações da linguagem SPar.
+> As anotações de alocação do `fork` existem só com arroba: `@nucleo` e `@computador`
+> (as palavras `nucleo` e `computador` sem `@` continuam livres para nomes de variáveis).
 
 ### 2.2 Literais
 
@@ -304,12 +306,25 @@ par {
 
 Inspirado no artigo *High-Level Stream and Data Parallelism in C++ for Multi-Cores* (SBLP'21), a anotação `pure` (ou `@pure`) marca que o laço ou bloco subsequente é **funcionalmente puro** (não possui efeitos colaterais em memória compartilhada externa, ou escreve em posições mutuamente exclusivas de arrays/matrizes).
 
-O compilador transcreve a região anotada como um padrão **Map / Parallel For**, permitindo fatiar as iterações entre núcleos da CPU sem necessidade de sincronização manual.
+O compilador transcreve o laço anotado como um padrão **Map / Parallel For**: as iterações são divididas entre as threads (uma por núcleo lógico da CPU, ou o valor de `MINIPAR_PURE_THREADS`), com escalonamento dinâmico de blocos, e há uma barreira implícita no fim do laço.
 
 ```bnf
 <bloco_pure> ::= "pure" <comando>
                | "@pure" <comando>
 ```
+
+**Quando o laço é paralelizado:**
+
+| Forma do comando anotado | Geração de código |
+|---|---|
+| `for (var i = a; i < b; i = i + passo)` (também `<=`, e `>`/`>=` com `i = i - passo`; `passo` literal positivo) | Paralelo (Map) |
+| `for (var x in colecao)` | Paralelo (Map) sobre os elementos |
+| Laço com `break` (do próprio laço) ou `return` no corpo | Sequencial (não dá para dividir entre threads) |
+| Outras formas de `for`, ou `pure { ... }` (bloco) | Sequencial (região marcada como pura) |
+
+> **Regra semântica de pureza (MiniPar 2026.2):** dentro de `pure`, atribuir a uma variável declarada **fora** do laço só é permitido dentro de `impure`.
+> *Erro reportado: `Atribuicao a variavel externa 'x' dentro de 'pure' sem regiao 'impure' (condicao de corrida).`*
+> Escritas em posições distintas de listas/matrizes (`matriz[y][x] = v`) são permitidas, pois cada iteração escreve na sua própria posição.
 
 **Exemplo:**
 
@@ -331,7 +346,7 @@ A anotação `impure` (ou `@impure`) delimita uma região com efeitos colaterais
 > *Erro reportado: `A anotação 'impure' só é permitida dentro de um bloco ou laço 'pure'.`*
 
 Na geração de código C++20, o compilador "purifica" a região protegendo-a automaticamente com um lock seguro:
-`std::lock_guard<std::mutex> lock(__minipar_impure_mtx);` garantindo ausência total de condições de corrida (*race conditions*).
+`std::lock_guard<std::mutex> __impure_guard(__minipar_impure_mtx);`, garantindo exclusão mútua entre as threads do laço `pure` (sem condições de corrida na região impura).
 
 ```bnf
 <bloco_impure> ::= "impure" "{" { <comando> } "}"
@@ -353,15 +368,59 @@ pure for (var i = 0; i < 1000; i = i + 1) {
 
 ### 6.5 Disparo Assíncrono de Subtarefas (FORK)
 
-Dispara a execução de um bloco de código como uma subtarefa assíncrona em uma thread independente da CPU em segundo plano, sem bloquear a thread principal do programa. O nome da tarefa é opcional e serve para identificação didática e alocação.
+Dispara a execução de um bloco de código como uma subtarefa assíncrona, sem bloquear a tarefa principal. O nome da tarefa é opcional e serve para identificação didática.
 
-Na geração de código, a tarefa é registrada no pool `__active_fork_threads` do runtime C++20.
+Conforme o enunciado, **a alocação de uma subtarefa pode ser para um Núcleo da CPU ou para um Computador diferente**. Isso é expresso na gramática pela produção `<alocacao>`:
 
 ```bnf
-<bloco_fork> ::= "fork" [ <IDENTIFIER> ] <comando>
+<bloco_fork> ::= "fork" [ <IDENTIFIER> ] [ <alocacao> ] <comando>
+
+<alocacao>   ::= "@nucleo" "(" <expressao> ")"                          (* núcleo da CPU *)
+               | "@computador" "(" <expressao> "," <expressao> ")"      (* ip, porta *)
+               | "@computador" "(" <expressao> ")"                      (* um c_channel *)
+               | "(" <expressao> ")"                                    (* forma legada = @nucleo *)
 ```
 
-**Exemplo:**
+| Alocação | Onde a subtarefa executa | Memória / comunicação | Código gerado |
+|---|---|---|---|
+| (nenhuma) | Thread no pool `__active_fork_threads` | Compartilhada com a tarefa principal | `__active_fork_threads.emplace_back([&]() { ... });` |
+| `@nucleo(n)` | Thread **fixada no núcleo `n`** da CPU (afinidade; `n` é tomado módulo o nº de núcleos) | Compartilhada com a tarefa principal | `__minipar_fixar_nucleo(n);` no início da thread |
+| `@computador(ip, porta)` | **Outro computador** (processo independente rodando o mesmo executável) | **Sem memória compartilhada**: dados só por mensagens `c_channel` | `__minipar_executar_remoto(...)` no computador principal e `__minipar_servir_tarefas(...)` no computador trabalhador |
+
+**Como funciona o `@computador` (mesmo programa em vários computadores):**
+- O computador principal executa o programa normalmente. Ao chegar no `fork ... @computador(ip, porta)`, envia o pedido da subtarefa para `ip:porta` e a thread do fork espera ela terminar; o `join` espera essas threads.
+- Um **computador trabalhador** é o mesmo executável iniciado com a variável de ambiente `MINIPAR_TRABALHADOR=<porta>` (ex.: `MINIPAR_TRABALHADOR=6201 ./output/programa.exe`). Ele só executa as subtarefas que recebe pela rede e encerra quando o programa principal termina.
+- Se o `ip` for local (`127.0.0.1`/`localhost`) e ninguém responder, o próprio programa inicia o processo trabalhador nesse computador — assim os testes podem ser feitos em localhost, como permite o enunciado, e depois em computadores diferentes trocando apenas o IP.
+- **Regra semântica:** a subtarefa `@computador` não pode usar variáveis declaradas fora do seu bloco (nem `this`), porque executa em outro processo. Funções e classes podem ser usadas.
+  *Erro: `A subtarefa 't' (fork @computador) nao pode usar a variavel externa 'x': ela executa em outro computador; envie os dados por c_channel.`*
+
+> Como o nome da tarefa é opcional, o parser usa um *lookahead* para distinguir `fork f();` (chamada de função sem nome de tarefa) de `fork t1(4) { ... }` (nome + alocação legada): se depois do `)` vier `;` ou `.`, é uma chamada.
+
+**Exemplo — a mesma tarefa principal dividida em 2 subtarefas, alocadas em núcleos ou em computadores** (programa completo em `tests/teste_fork_nucleos_computadores.minipar`):
+
+```minipar
+# Em 2 núcleos diferentes da CPU (memória compartilhada)
+fork subtarefa_soma @nucleo(0) {
+    resultado_soma = soma_ate(n_soma);
+    print("[subtarefa_soma] executada no nucleo", nucleo_atual());
+}
+fork subtarefa_fatorial @nucleo(1) {
+    resultado_fat = fatorial(n_fat);
+}
+join;
+
+# Em 2 computadores diferentes (dados vão e voltam por c_channel)
+fork subtarefa_soma_remota @computador("127.0.0.1", 6201) {
+    var entrada = c_channel("127.0.0.1", 6211);
+    var saida = c_channel("127.0.0.1", 6213);
+    send(saida, soma_ate(to_number(receive(entrada))));
+}
+send(envio_soma, n_soma);
+var soma_remota = receive(retorno_soma);
+join;
+```
+
+**Exemplo (Teste 8 — fork sem alocação explícita):**
 
 ```minipar
 fork nucleo_1 {
@@ -723,8 +782,10 @@ var dado = receive(c_channel("127.0.0.1", 5000));
 ```minipar
 var vazio = [];
 var numeros = [1, 2, 3, 4, 5];
-var misto = [0, "texto", true];
+var pesos = [0.5, 0.25, 1];
 ```
+
+> Listas literais são numéricas (`std::vector<double>` no C++ gerado). Para guardar textos, use `matrix(linhas, colunas, "")`.
 
 ### 12.2 Indexação
 
@@ -805,7 +866,7 @@ var numero = to_number(input("Digite um número: "));
 <literal_numero> ::= <digito> { <digito> } [ "." { <digito> } ]
 ```
 
-Representa inteiros e ponto flutuante. Internamente ambos são tratados como `double` no C++ gerado.
+Representa inteiros e ponto flutuante. No C++ gerado as variáveis são declaradas com `auto`: um literal sem ponto vira inteiro de **64 bits** (`long long`, ex.: `42LL`) e um literal com ponto vira `double`. Os inteiros de 64 bits aproximam o MiniPar do `int` do Python (o enunciado pede "Int — o mesmo do Python"): por exemplo, o gerador pseudoaleatório `(estado * 1103515245 + 12345) % 2147483648` dos Testes 8–10 não estoura. A divisão `/` entre dois inteiros é inteira (como `//` no Python), e o operador `%` só deve ser usado com valores inteiros.
 
 **Exemplos:** `0`, `42`, `3.14`, `0.5`
 
@@ -850,8 +911,12 @@ As seguintes funções são reconhecidas pelo analisador semântico e traduzidas
 | `random()` | `random()` → `number` | Número aleatório entre 0 e 1 |
 | `range(n)` / `range(a,b)` | `range(int)` → `list` | Gera sequência inteira |
 | `len(col)` | `len(list\|string)` → `number` | Comprimento de coleção |
-| `to_number(s)` | `to_number(string)` → `number` | Converte string para número |
+| `to_number(s)` | `to_number(string)` → `number` | Converte string para número (texto inválido: mostra `[ERRO] ... nao e um numero valido; usando 0.` e devolve 0, sem derrubar o programa) |
 | `parse_ints(s)` | `parse_ints(string)` → `list` | Parseia inteiros de string separados por espaço |
+| `obter_tempo()` | `obter_tempo()` → `number` | Instante atual em segundos (alta precisão), para medir tempos |
+| `simular_trabalho(ms)` | `simular_trabalho(number)` | Ocupa a thread por `ms` milissegundos (espera ativa), para simular carga |
+| `nucleo_atual()` | `nucleo_atual()` → `number` | Núcleo da CPU em que a thread atual está executando (-1 se indisponível) |
+| `str(x)` | `str(any)` → `string` | Converte um valor em texto, como o `str()` do Python (ex.: `"Total: " + str(n)`) |
 
 ### Métodos de Lista (acesso via ponto)
 
@@ -966,7 +1031,11 @@ A seguir a gramática completa em formato BNF, em ordem de definição:
 
 <bloco_impure> ::= ( "impure" | "@impure" ) "{" { <comando> } "}"
 
-<bloco_fork>   ::= "fork" [ <IDENTIFIER> ] <comando>
+<bloco_fork>   ::= "fork" [ <IDENTIFIER> ] [ <alocacao> ] <comando>
+
+<alocacao>     ::= "@nucleo" "(" <expressao> ")"
+                 | "@computador" "(" <expressao> [ "," <expressao> ] ")"
+                 | "(" <expressao> ")"
 
 
 (* ─── ESTRUTURAS DE CONTROLE ─── *)
@@ -1129,6 +1198,10 @@ O analisador semântico (`src/semantic.py`) usa inferência simples de tipos com
 | Atributo inexistente | `Atributo 'a' não declarado em 'C'.` |
 | `break`/`continue` fora de laço | `'break' usado fora de laço de repetição.` |
 | **SPar:** `impure` fora de `pure` | `A anotação 'impure' só é permitida dentro de um bloco ou laço 'pure'.` |
+| **SPar:** escrita em variável externa dentro de `pure` sem `impure` | `Atribuição a variável externa 'x' dentro de 'pure' sem região 'impure' (condição de corrida).` |
+| **Fork:** subtarefa `@computador` usando variável externa ou `this` | `A subtarefa 't' (fork @computador) não pode usar a variável externa 'x': ela executa em outro computador; envie os dados por c_channel.` |
+
+> As mensagens aparecem no console sem acentos (ex.: `Variavel 'x' ja declarada.`).
 
 ### Geração de Código Intermediário (TAC - 3 Endereços)
 
@@ -1136,7 +1209,9 @@ O analisador semântico (`src/semantic.py`) usa inferência simples de tipos com
 |-------------------|-----------------------------------|
 | `pure for (...)` | `BEGIN_PURE_MAP` ... `END_PURE_MAP` |
 | `impure { ... }` | `ACQUIRE_LOCK` ... `RELEASE_LOCK` |
-| `fork task { ... }` | `FORK_TASK task` ... |
+| `fork task { ... }` | `FORK_TASK task:` ... `ENDFORK task` |
+| `fork task @nucleo(n) { ... }` | `FORK_TASK task @nucleo(n):` ... `ENDFORK task` |
+| `fork task @computador(ip, p) { ... }` | `FORK_TASK task @computador(ip, p):` ... `ENDFORK task` |
 | `join;` | `JOIN_TASKS` |
 
 ### Geração de Código C++20
@@ -1148,20 +1223,25 @@ O analisador semântico (`src/semantic.py`) usa inferência simples de tipos com
 | `obj.metodo(args)` | `obj->metodo(args)` |
 | `obj.campo` | `obj->campo` |
 | `par { a; b; }` | `std::vector<std::thread>` + `emplace_back` + `join` |
-| `pure for (...)` | Paralelismo de Dados (Padrão Map) |
-| `impure { ... }` | `std::lock_guard<std::mutex> lock(__minipar_impure_mtx);` |
+| `pure for (...)` | `__minipar_pure_map(n, [&](inicio, fim) { for (...) corpo })` — iterações divididas entre `std::thread` (padrão Map) |
+| `impure { ... }` | `std::lock_guard<std::mutex> __impure_guard(__minipar_impure_mtx);` |
 | `fork task { ... }` | `__active_fork_threads.emplace_back([&]() { ... });` |
+| `fork task @nucleo(n) { ... }` | Thread no pool que chama `__minipar_fixar_nucleo(n)` (afinidade de CPU) antes do corpo |
+| `fork task @computador(ip, p) { ... }` | Thread que chama `__minipar_executar_remoto(...)`; o corpo vai para o `main()` do computador trabalhador (`__minipar_servir_tarefas`) |
 | `join;` | Percorre `__active_fork_threads` chamando `.join()` em cada thread |
-| `obter_tempo()` | `std::chrono::duration_cast<std::chrono::microseconds>(...)` |
-| `simular_trabalho(ms)` | `std::this_thread::sleep_for(std::chrono::milliseconds(ms))` |
+| `print(a, b)` | `__minipar_print(a, b)` — monta a linha e escreve de uma vez (sem misturar saída entre threads) |
+| `obter_tempo()` | `duration_cast<duration<double>>(high_resolution_clock::now()...)` (segundos) |
+| `simular_trabalho(ms)` | Espera ativa (laço consultando `high_resolution_clock`) por `ms` milissegundos |
 | `c_channel(ip, porta)` | `std::make_shared<MiniParChannel>(ip, porta)` |
 | `send(canal, msg)` | `canal->sendData(__to_string(msg))` |
 | `receive(canal)` | `canal->receiveData()` |
-| `[1, 2, 3]` | `std::vector<double>{1, 2, 3}` |
+| `42` (literal inteiro) | `42LL` (inteiro de 64 bits) |
+| `[1, 2, 3]` | `std::vector<double>{1LL, 2LL, 3LL}` |
+| `str(x)` | `__to_string(x)` |
 | `matrix(l, c, v)` | `__make_matrix(l, c, v)` |
 | `exp(x)` | `std::exp(x)` |
 | `random()` | `random_val()` |
-| `to_number(s)` | `std::stod(s)` |
+| `to_number(s)` | `__minipar_to_number(s)` (texto inválido: mostra aviso e usa 0) |
 | `len(x)` | `x.size()` |
 | `range(n)` | `__minipar_range(n)` |
 | `input(p)` | `input(p)` (helper C++) |

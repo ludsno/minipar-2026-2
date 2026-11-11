@@ -1,3 +1,15 @@
+# ==============================================================================
+# TESTE 6: Ordenacao com Quicksort usando Classes
+# Le um vetor de inteiros do teclado e o ordena com o metodo quicksort (recursivo)
+# da classe Quicksort.
+# Enunciado: Programa de Teste 6 (classes Quicksort e InterfaceOrdenacao em Python).
+#
+# Execucao: 1 computador.
+# Entrada: os numeros separados por espaco (ex.: 10 -3 -40 80 70 -100).
+# Saida esperada: "Vetor ordenado: [-100, -40, -3, 10, 70, 80]".
+# ==============================================================================
+
+# Classe com o vetor e os metodos de ordenacao
 class Quicksort {
     var array = [0];
 
@@ -11,6 +23,7 @@ class Quicksort {
         this.array[j] = temp;
     }
 
+    # Particao de Lomuto: o ultimo elemento e o pivo; menores ficam a esquerda
     func particionar(inicio, fim) {
         var pivot = this.array[fim];
         var i = inicio - 1;
@@ -27,6 +40,7 @@ class Quicksort {
         return i;
     }
 
+    # Quicksort recursivo: particiona e ordena as duas metades
     func quicksort(inicio, fim) {
         if (inicio < fim) {
             var p = this.particionar(inicio, fim);
@@ -47,6 +61,7 @@ class Quicksort {
 seq {
     print("==== Ordenacao com Quicksort ====");
     print("Insira os elementos do vetor separados por espaco:");
+    # Le a linha digitada e converte em vetor de numeros
     var entrada = input("");
     var vetor = parse_ints(entrada);
     print("Vetor original:", vetor);

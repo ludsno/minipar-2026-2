@@ -60,14 +60,12 @@ classDiagram
 
     class ILexico {
         <<interface>>
-        +tokenize(source_code: string) List~Token~
-        +categorize_token(tok_type: TokenType) string
+        +tokenize() List~Token~
     }
 
     class ISintatico {
         <<interface>>
-        +parse(tokens: List~Token~) Program
-        +ast_to_dict(node: ASTNode) Map
+        +parse() Program
     }
 
     class ISemantico {
@@ -75,6 +73,15 @@ classDiagram
         +analyze(program: Program) bool
         +get_symbol_table() List~Symbol~
         +get_errors() List~string~
+    }
+
+    class ITabelaSimbolos {
+        <<interface>>
+        +entrar_escopo()
+        +sair_escopo()
+        +declarar(nome, tipo, escopo, linha, params) bool
+        +buscar(nome) Symbol
+        +get_symbol_table() List~Map~
     }
 
     class ITAC {
@@ -107,7 +114,7 @@ classDiagram
     class C_Parser {
         <<component>>
         -tokens: List~Token~
-        -current: int
+        -pos: int
         +parse()
         -_parse_pure_block()
         -_parse_impure_block()
@@ -117,11 +124,20 @@ classDiagram
 
     class C_Semantic {
         <<component>>
-        -scopes: List~Map~
-        -symbol_history: List~Map~
+        -tabela: C_TabelaSimbolos
         -inside_pure: bool
+        -pure_scope_base: int
+        -remote_scope_base: int
         +analyze()
         +get_symbol_table()
+    }
+
+    class C_TabelaSimbolos {
+        <<component>>
+        -escopos: List~Map~
+        -historico: List~Map~
+        +declarar()
+        +buscar()
     }
 
     class C_TAC {
@@ -149,6 +165,8 @@ classDiagram
     C_Parser ..|> ISintatico : Fornece
     C_Semantic ..> ISintatico : Requer
     C_Semantic ..|> ISemantico : Fornece
+    C_Semantic ..> ITabelaSimbolos : Requer
+    C_TabelaSimbolos ..|> ITabelaSimbolos : Fornece
     C_TAC ..> ISintatico : Requer
     C_TAC ..> ISemantico : Requer
     C_TAC ..|> ITAC : Fornece
@@ -163,13 +181,30 @@ classDiagram
     C_DidacticWeb ..> ICodeGen : Requer
 ```
 
+### Correspondência no Código-Fonte
+
+As interfaces estão implementadas como classes abstratas em `src/componentes.py` (mesmo padrão do exemplo `IRelogio` / `Relogio` do Anexo 2 do enunciado), e cada componente é a classe concreta que as implementa:
+
+| Componente UML | Classe no código | Interface (classe abstrata) | Arquivo |
+| :--- | :--- | :--- | :--- |
+| `C_Lexer` | `Lexer` | `ILexico` | `src/lexer.py` |
+| `C_Parser` | `Parser` | `ISintatico` | `src/parser.py` |
+| `C_Semantic` | `SemanticAnalyzer` | `ISemantico` | `src/semantic.py` |
+| `C_TabelaSimbolos` | `TabelaSimbolos` | `ITabelaSimbolos` | `src/semantic.py` |
+| `C_TAC` | `TACGenerator` | `ITAC` | `src/tac.py` |
+| `C_CodeGen` | `CppCodeGenerator` | `ICodeGen` | `src/codegen.py` |
+| `C_DidacticWeb` | rotas Flask em `app.py` + `didatico.js` | `IInspectService` (`/api/inspect`, `/api/build`, `/api/download_exe`) | `app.py` |
+
+A conformidade é verificada automaticamente em `tests/test_integracao_componentes.py` (classe `T1_InterfacesDosComponentes`).
+
 ### Especificação das Interfaces dos Componentes:
 
 | Componente | Interface Fornecida | Interface Requerida | Papel no Pipeline |
 | :--- | :--- | :--- | :--- |
 | **`C_Lexer`** | `ILexico` | Nenhuma (Lê código bruto) | Converte o fluxo de caracteres em tokens (com suporte a `pure`, `impure`, `fork`, `join`). |
 | **`C_Parser`** | `ISintatico` | `ILexico` | Constrói a Árvore Sintática Abstrata (AST) e a exporta para JSON hierárquico (`ast_to_dict`). |
-| **`C_Semantic`** | `ISemantico` | `ISintatico` | Valida escopos, tipos e impõe a regra SPar (`impure` restrito a `pure`). Exporta Tabela de Símbolos. |
+| **`C_Semantic`** | `ISemantico` | `ISintatico`, `ITabelaSimbolos` | Valida escopos e tipos e impõe as regras de paralelismo (`impure` só dentro de `pure`; sem escrita externa em `pure` fora de `impure`; `fork @computador` sem variáveis externas). |
+| **`C_TabelaSimbolos`** | `ITabelaSimbolos` | Nenhuma | Pilha de escopos e histórico de todos os símbolos (nome, tipo, escopo, linha, parâmetros). |
 | **`C_TAC`** | `ITAC` | `ISintatico`, `ISemantico` | Gera Código de 3 Endereços com diretivas `BEGIN_PURE_MAP`, `ACQUIRE_LOCK`, `FORK_TASK`, `JOIN_TASKS`. |
 | **`C_CodeGen`** | `ICodeGen` | `ISintatico`, `ISemantico` | Transpila a AST para C++20 multithread (`std::thread`, `std::mutex`, `std::lock_guard`) e invoca `g++`. |
 | **`C_DidacticWeb`** | `IInspectService` | `ILexico`, `ISintatico`, `ISemantico`, `ITAC`, `ICodeGen` | Painel web educacional padrão IFSC com AST gráfica em SVG/D3.js, badges de tokens e download do `.exe`. |
@@ -265,7 +300,8 @@ classDiagram
     class ForkBlock {
         +ASTNode body
         +string task_name
-        +ASTNode cores
+        +string alloc_kind
+        +List~ASTNode~ alloc_args
     }
 
     class JoinStmt {
@@ -446,3 +482,30 @@ sequenceDiagram
     UI-->>Aluno: Exibe resultado e métricas de aceleração
 ```
 
+---
+
+## 7. Diagrama de Sequência UML (Fork com Alocação em Outro Computador)
+
+Demonstra `fork t @computador(ip, porta) { ... }`: o mesmo executável roda nos dois computadores; o computador trabalhador foi iniciado com `MINIPAR_TRABALHADOR=<porta>` (em `localhost`, o próprio programa o inicia). Não há memória compartilhada: os dados trafegam por `c_channel`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Main as Computador 1 (programa principal)
+    participant Fork as Thread do fork t
+    participant Worker as Computador 2 (MINIPAR_TRABALHADOR=porta)
+
+    Main->>Fork: fork t @computador(ip, porta)
+    activate Fork
+    Fork->>Worker: conecta em ip:porta e envia "EXEC t#0"
+    activate Worker
+    Main->>Worker: send(canal_dados, n)  (c_channel)
+    Worker->>Worker: executa o corpo da subtarefa t
+    Worker->>Main: send(canal_resultado, resultado)  (c_channel)
+    Worker-->>Fork: "FIM"
+    deactivate Worker
+    Fork-->>Main: thread do fork termina
+    deactivate Fork
+    Main->>Main: join (barreira)
+    Main->>Worker: "SAIR" (fim do programa, __minipar_finalizar)
+```

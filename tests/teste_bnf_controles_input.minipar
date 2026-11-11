@@ -1,3 +1,12 @@
+# ==============================================================================
+# TESTE ADICIONAL: Estruturas de Controle da Gramatica (BNF)
+# Exercita for classico com continue, do-while com break e declaracao de funcao
+# com input (a funcao ler_nome so demonstra a sintaxe; ela nao e chamada).
+#
+# Execucao: 1 computador. Entrada: nenhuma.
+# Saida esperada: "Controle OK: 7 2" (soma 0+1+2+4 = 7; o do-while para em 2).
+# ==============================================================================
+
 func ler_nome() {
     var nome = input("Nome: ");
     return nome;
@@ -5,6 +14,7 @@ func ler_nome() {
 
 seq {
     var soma = 0;
+    # for com continue: soma 0, 1, 2 e 4 (pula o 3)
     for (var i = 0; i < 5; i = i + 1) {
         if (i == 3) {
             continue;
@@ -13,6 +23,7 @@ seq {
     }
 
     var tentativas = 0;
+    # do-while com break: sai do laco quando tentativas chega a 2
     do {
         tentativas = tentativas + 1;
         if (tentativas == 2) {

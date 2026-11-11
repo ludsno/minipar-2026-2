@@ -1,7 +1,20 @@
+# ==============================================================================
+# TESTE 4: Rede Neural para a funcao XOR (Feedforward + Backpropagation)
+# Rede com 2 entradas, uma camada oculta de 3 neuronios e 1 neuronio de saida,
+# todos com ativacao sigmoide, treinada por 20000 epocas com backpropagation.
+# Enunciado: Programa de Teste 4. Os pesos iniciais sao fixos (no Python sao
+# aleatorios), para que o resultado seja reproduzivel.
+#
+# Execucao: 1 computador. Entrada: nenhuma.
+# Saida esperada: proximo de 0 para [0, 0] e [1, 1]; proximo de 1 para [0, 1] e [1, 0].
+# ==============================================================================
+
+# Funcao de ativacao sigmoide: 1 / (1 + e^(-x))
 func sigmoid(x) {
     return 1 / (1 + exp(0 - x));
 }
 
+# Derivada da sigmoide, escrita em funcao da propria saida
 func derivada_sigmoid(saida) {
     return saida * (1 - saida);
 }
@@ -9,6 +22,7 @@ func derivada_sigmoid(saida) {
 class RedeNeuralXOR {
     var taxa_aprendizado = 0.5;
 
+    # Pesos e bias dos 3 neuronios da camada oculta (h1, h2, h3)
     var h1_w1 = 0.2;
     var h1_w2 = -0.4;
     var h1_bias = 0.0;
@@ -21,6 +35,7 @@ class RedeNeuralXOR {
     var h3_w2 = 0.5;
     var h3_bias = -0.2;
 
+    # Pesos e bias do neuronio de saida
     var out_w1 = 0.4;
     var out_w2 = -0.5;
     var out_w3 = 0.3;
@@ -31,6 +46,7 @@ class RedeNeuralXOR {
     var h3 = 0.0;
     var saida = 0.0;
 
+    # Propagacao: entradas -> camada oculta -> saida
     func feedforward(x1, x2) {
         this.h1 = sigmoid((x1 * this.h1_w1) + (x2 * this.h1_w2) + this.h1_bias);
         this.h2 = sigmoid((x1 * this.h2_w1) + (x2 * this.h2_w2) + this.h2_bias);
@@ -46,6 +62,8 @@ class RedeNeuralXOR {
         return this.saida;
     }
 
+    # Backpropagation de uma amostra: calcula o erro na saida e ajusta os pesos
+    # da saida e depois os da camada oculta (usando os pesos antigos da saida)
     func treinar_amostra(x1, x2, desejado) {
         var previsto = this.feedforward(x1, x2);
         var erro = desejado - previsto;
@@ -77,6 +95,7 @@ class RedeNeuralXOR {
         this.h3_bias = this.h3_bias + (delta_h3 * this.taxa_aprendizado);
     }
 
+    # Treino: 20000 epocas com as 4 amostras da tabela verdade do XOR
     func treinar() {
         var epoca = 0;
 
@@ -89,6 +108,7 @@ class RedeNeuralXOR {
         }
     }
 
+    # Teste: mostra a previsao da rede para as 4 entradas
     func testar() {
         print("==== Teste 4: rede neural XOR com backpropagation ====");
         print("Input: [0, 0], Predicted Output:", this.feedforward(0, 0));
