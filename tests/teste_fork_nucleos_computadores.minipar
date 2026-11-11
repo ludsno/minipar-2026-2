@@ -1,0 +1,99 @@
+# ==============================================================================
+# TESTE FORK/JOIN COM ALOCACAO: subtarefas em Nucleos da CPU ou em Computadores
+# Enunciado MiniPar 2026.2: "A alocacao de uma subtarefa a ser executada via o
+# Fork pode ser para um Nucleo da CPU ou para um Computador diferente."
+#
+# A mesma tarefa principal (somar 1..N e calcular N!) e dividida em 2 subtarefas:
+#   Parte 1: cada subtarefa alocada em um NUCLEO diferente da CPU  -> fork @nucleo(n)
+#   Parte 2: cada subtarefa alocada em um COMPUTADOR diferente     -> fork @computador(ip, porta)
+#
+# Na Parte 2 cada subtarefa roda em outro processo/computador (sem memoria
+# compartilhada): os dados chegam e os resultados voltam por mensagens (c_channel).
+# Em localhost o compilador inicia sozinho os processos dos computadores 2 e 3.
+# Em computadores reais: no computador 2 rode  MINIPAR_TRABALHADOR=6201 ./output/<programa>.exe
+#                        no computador 3 rode  MINIPAR_TRABALHADOR=6202 ./output/<programa>.exe
+# e troque "127.0.0.1" pelos IPs (o canal de volta deve apontar para o computador 1).
+#
+# Execucao: Parte 1 em 1 computador (2 nucleos). Parte 2 em 3 computadores; em
+#   localhost os computadores 2 e 3 sao iniciados sozinhos (processos separados).
+#   Para a apresentacao, prefira tests/demo_varios_computadores.minipar (pergunta os IPs).
+# Entrada: nenhuma.
+# ==============================================================================
+
+func soma_ate(n) {
+    var soma = 0;
+    var i = 1;
+    while (i <= n) {
+        soma = soma + i;
+        i = i + 1;
+    }
+    return soma;
+}
+
+func fatorial(n) {
+    var resultado = 1;
+    var i = 2;
+    while (i <= n) {
+        resultado = resultado * i;
+        i = i + 1;
+    }
+    return resultado;
+}
+
+var n_soma = 10000;
+var n_fat = 12;
+
+# ------------------------------------------------------------------------------
+# Parte 1: subtarefas alocadas em nucleos diferentes da CPU
+# ------------------------------------------------------------------------------
+print("=== Parte 1: fork com subtarefas alocadas em NUCLEOS da CPU ===");
+var resultado_soma = 0;
+var resultado_fat = 0;
+
+fork subtarefa_soma @nucleo(0) {
+    resultado_soma = soma_ate(n_soma);
+    print("[subtarefa_soma] executada no nucleo", nucleo_atual());
+}
+
+fork subtarefa_fatorial @nucleo(1) {
+    resultado_fat = fatorial(n_fat);
+    print("[subtarefa_fatorial] executada no nucleo", nucleo_atual());
+}
+
+join;
+print("Soma de 1 a", n_soma, "=", resultado_soma);
+print("Fatorial de", n_fat, "=", resultado_fat);
+
+# ------------------------------------------------------------------------------
+# Parte 2: as mesmas subtarefas alocadas em computadores diferentes
+# ------------------------------------------------------------------------------
+print("");
+print("=== Parte 2: fork com subtarefas alocadas em COMPUTADORES diferentes ===");
+var envio_soma = c_channel("127.0.0.1", 6211);       # computador 1 -> computador 2
+var envio_fat = c_channel("127.0.0.1", 6212);        # computador 1 -> computador 3
+var retorno_soma = c_channel("127.0.0.1", 6213);     # computador 2 -> computador 1
+var retorno_fat = c_channel("127.0.0.1", 6214);      # computador 3 -> computador 1
+
+fork subtarefa_soma_remota @computador("127.0.0.1", 6201) {
+    var entrada = c_channel("127.0.0.1", 6211);
+    var saida = c_channel("127.0.0.1", 6213);
+    var n = to_number(receive(entrada));
+    send(saida, soma_ate(n));
+}
+
+fork subtarefa_fatorial_remota @computador("127.0.0.1", 6202) {
+    var entrada = c_channel("127.0.0.1", 6212);
+    var saida = c_channel("127.0.0.1", 6214);
+    var n = to_number(receive(entrada));
+    send(saida, fatorial(n));
+}
+
+# Computador 1 envia os dados a cada computador e coleta os resultados
+send(envio_soma, n_soma);
+send(envio_fat, n_fat);
+var soma_remota = receive(retorno_soma);
+var fat_remoto = receive(retorno_fat);
+join;
+
+print("Soma de 1 a", n_soma, "(calculada no computador 2) =", soma_remota);
+print("Fatorial de", n_fat, "(calculado no computador 3) =", fat_remoto);

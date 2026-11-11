@@ -103,8 +103,8 @@
                     </div>
                     <!-- Entrada de Dados Opcional (input) -->
                     <div class="editor-footer-inputs" id="input-container" style="display: none;">
-                        <label for="user-inputs"><i class="fa-solid fa-keyboard"></i> Entradas para o programa (uma por linha):</label>
-                        <input type="text" id="user-inputs" class="form-input" placeholder="Ex: 10, 20">
+                        <label for="user-inputs"><i class="fa-solid fa-keyboard"></i> Entradas para o programa (uma por linha, na ordem das perguntas):</label>
+                        <textarea id="user-inputs" class="form-input form-textarea" rows="3" spellcheck="false" placeholder="Uma resposta por linha"></textarea>
                     </div>
                 </div>
 
@@ -387,7 +387,7 @@
                                     <div class="formula-box">
                                         <code>Speedup (S) = T_sequencial / T_paralelo</code>
                                     </div>
-                                    <p>Para executar o benchmark oficial do professor, selecione <strong>Teste 8 (4 Núcleos)</strong>, <strong>Teste 9 (5 Núcleos com Mandelbrot)</strong> ou <strong>Teste 10 (6 Núcleos)</strong> no seletor de programas e clique em <strong>"Executar"</strong>.</p>
+                                    <p>Para executar o benchmark oficial do professor, selecione <strong>Teste 8 (4 Núcleos)</strong>, <strong>Teste 9 (5 Núcleos com Mandelbrot)</strong> ou <strong>Teste 10 (6 Núcleos)</strong> no seletor de programas e clique em <strong>"Executar"</strong>. Para ver o ganho do paralelismo de dados (<code>pure for</code>) com cálculo real de CPU, selecione <strong>Pure x Sequencial</strong>.</p>
                                 </div>
                             </div>
                         </div>

@@ -12,7 +12,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from lexer import Lexer, TokenType
-from parser import Parser
+from parser import Parser, ParseError
 from semantic import SemanticAnalyzer
 from tac import TACGenerator
 from codegen import CppCodeGenerator
@@ -47,7 +47,7 @@ def categorize_token(tok_type: TokenType) -> str:
     name = tok_type.name
     if name in ('PURE', 'IMPURE'):
         return 'Anotação SPar'
-    if name in ('FORK', 'JOIN', 'SEQ', 'PAR'):
+    if name in ('FORK', 'JOIN', 'SEQ', 'PAR', 'ALLOC_NUCLEO', 'ALLOC_COMPUTADOR'):
         return 'Paralelismo & Concorrência'
     if name in ('CLASS', 'EXTENDS', 'NEW', 'FUNC', 'THIS'):
         return 'Orientação a Objetos'
@@ -86,30 +86,61 @@ def extract_benchmark_metrics(output_text: str) -> dict:
     if not output_text:
         return metrics
 
-    m_speedup = re.search(r'Speedup(?:\s+obtido)?[:=]\s*([0-9]+(?:\.[0-9]+)?)x?', output_text, re.IGNORECASE)
+    # Aceita os formatos impressos pelos testes, ex.:
+    #   "Aceleracao (Speedup)         :  3.99729 x mais rapido!"
+    #   "Tempo Sequencial             :  2.40017  s"
+    #   "Reducao no tempo             :  74.983 % de economia"
+    # e também formatos curtos como "Speedup: 3.98x".
+    num = r'([0-9]+(?:\.[0-9]+)?(?:e[-+]?[0-9]+)?)'
+
+    m_speedup = re.search(r'Speedup\)?(?:\s+obtido)?\s*[:=]\s*' + num, output_text, re.IGNORECASE)
     if m_speedup:
-        metrics["speedup"] = float(m_speedup.group(1))
+        metrics["speedup"] = round(float(m_speedup.group(1)), 2)
         metrics["is_benchmark"] = True
 
-    m_seq = re.search(r'Tempo\s+Sequencial(?:\s+\(.*?\))?[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:s|seg|ms)?', output_text, re.IGNORECASE)
+    m_seq = re.search(r'Tempo\s+Sequencial[^:=\n]*[:=]\s*' + num, output_text, re.IGNORECASE)
     if m_seq:
-        metrics["time_seq"] = float(m_seq.group(1))
+        metrics["time_seq"] = round(float(m_seq.group(1)), 4)
         metrics["is_benchmark"] = True
 
-    m_par = re.search(r'Tempo\s+Paralelo(?:\s+\(.*?\))?[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:s|seg|ms)?', output_text, re.IGNORECASE)
+    m_par = re.search(r'Tempo\s+Paralelo[^:=\n]*[:=]\s*' + num, output_text, re.IGNORECASE)
     if m_par:
-        metrics["time_par"] = float(m_par.group(1))
+        metrics["time_par"] = round(float(m_par.group(1)), 4)
         metrics["is_benchmark"] = True
 
-    m_red = re.search(r'Reducao(?:\s+de\s+tempo)?[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*%', output_text, re.IGNORECASE)
+    m_red = re.search(r'Redu(?:c|ç)(?:a|ã)o[^:=\n%]*[:=]\s*' + num + r'\s*%', output_text, re.IGNORECASE)
     if m_red:
-        metrics["reduction_pct"] = float(m_red.group(1))
+        metrics["reduction_pct"] = round(float(m_red.group(1)), 1)
 
-    m_cores = re.search(r'([0-9]+)\s+(?:nucleos|núcleos|threads|cores)', output_text, re.IGNORECASE)
+    # Completa o que faltar a partir dos tempos medidos
+    if metrics["time_seq"] and metrics["time_par"]:
+        if metrics["speedup"] is None:
+            metrics["speedup"] = round(metrics["time_seq"] / metrics["time_par"], 2)
+        if metrics["reduction_pct"] is None:
+            metrics["reduction_pct"] = round((1 - metrics["time_par"] / metrics["time_seq"]) * 100, 1)
+
+    m_cores = re.search(r'N(?:u|ú)cleos\s+Utilizados[^:\n]*:\s*([0-9]+)', output_text, re.IGNORECASE)
+    if not m_cores:
+        m_cores = re.search(r'([0-9]+)\s+(?:nucleos|núcleos|threads|cores)', output_text, re.IGNORECASE)
     if m_cores:
         metrics["cores"] = int(m_cores.group(1))
 
     return metrics
+
+
+def safe_minipar_name(filename: str | None, default: str = 'ide_temp.minipar') -> str:
+    """Nome de arquivo seguro: só o nome base (sem pastas) e com extensão .minipar.
+
+    Impede que '../app.py' (ou caminhos absolutos) leia ou sobrescreva arquivos
+    fora de tests/ e temp_code/.
+    """
+    name = os.path.basename(str(filename or '').replace('\\', '/')).strip()
+    name = re.sub(r'[^A-Za-z0-9_.\-]', '_', name)
+    if not name or name in ('.', '..'):
+        name = default
+    if not name.endswith('.minipar'):
+        name += '.minipar'
+    return name
 
 
 def find_executable(base_name: str) -> str | None:
@@ -141,9 +172,9 @@ def get_tests():
 
 @app.route('/api/get_test', methods=['POST'])
 def get_test():
-    filename = request.json.get('filename')
+    filename = safe_minipar_name(request.json.get('filename'))
     filepath = os.path.join(TESTS_DIR, filename)
-    if os.path.exists(filepath):
+    if os.path.isfile(filepath):
         with open(filepath, 'r', encoding='utf-8') as f:
             return jsonify({"code": f.read()})
     return jsonify({"error": "Arquivo não encontrado"}), 404
@@ -182,9 +213,9 @@ def session_join():
 
 @app.route('/api/session/create', methods=['POST'])
 def session_create():
-    filename = request.json.get('filename')
+    filename = safe_minipar_name(request.json.get('filename'))
     path = os.path.join(TESTS_DIR, filename)
-    if not os.path.exists(path):
+    if not os.path.isfile(path):
         return jsonify({"success": False, "error": "Arquivo não encontrado"}), 404
     from program_analyzer import get_program_spec
     spec = get_program_spec(path)
@@ -269,6 +300,11 @@ def inspect_code():
         parser = Parser(tokens)
         program = parser.parse()
         response["ast"] = ast_to_dict(program)
+    except ParseError as e:
+        response["success"] = False
+        response["phase"] = "parser"
+        response["error"] = f"Erro Sintático: {e.message}"
+        return jsonify(response)
     except Exception as e:
         response["success"] = False
         response["phase"] = "parser"
@@ -362,7 +398,7 @@ def download_exe(filename=None):
     if not filename:
         filename = 'ide_temp.minipar'
         
-    base_name = os.path.basename(filename).replace('.minipar', '').replace('.exe', '')
+    base_name = safe_minipar_name(str(filename).replace('.exe', ''))[:-len('.minipar')]
     exe_path = find_executable(base_name)
     
     # Se ainda não existe, tenta compilar caso o código-fonte exista
@@ -387,11 +423,36 @@ def download_exe(filename=None):
     return jsonify({"error": f"Executável para '{base_name}' não encontrado e não pôde ser gerado."}), 404
 
 
+@app.route('/api/build', methods=['POST'])
+def build_code():
+    """Compila o código atual do editor (sem executar) — usado pelo botão
+    "Baixar .exe" para que o executável baixado corresponda ao que está na tela."""
+    data = request.json or {}
+    code = data.get('code') or ''
+    filename = safe_minipar_name(data.get('filename'))
+    base_name = filename[:-len('.minipar')]
+    file_path = os.path.join(TEMP_DIR, filename)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(code)
+    try:
+        process = subprocess.run([sys.executable, 'main.py', file_path, base_name],
+                                 capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return jsonify({"success": False, "log": "Tempo limite do compilador excedido."}), 500
+    log = process.stdout + (("\n" + process.stderr) if process.stderr else "")
+    success = process.returncode == 0 and find_executable(base_name) is not None
+    return jsonify({
+        "success": success,
+        "log": log,
+        "download_url": f"/api/download_exe/{base_name}" if success else None,
+    })
+
+
 @app.route('/api/compile', methods=['POST'])
 def compile_code():
     data = request.json
     code = data.get('code')
-    filename = data.get('filename', 'ide_temp.minipar')
+    filename = safe_minipar_name(data.get('filename'))
     user_inputs = data.get('inputs', [])
     
     # Salva o código recebido da IDE em um arquivo temporário
@@ -443,7 +504,10 @@ def compile_code():
                 full_output += f"\n--- Executando {base_name} ---\n"
                 set_session_phase("executing", f"Executando {base_name}...", percent=90)
                 try:
-                    stdin_data = None
+                    # Sem entradas informadas, o programa recebe uma entrada vazia
+                    # (input() devolve ""), em vez de herdar o terminal do servidor
+                    # e ficar parado esperando digitação até estourar o tempo limite.
+                    stdin_data = ""
                     if stdin_lines:
                         stdin_data = "\n".join(stdin_lines) + "\n"
                     

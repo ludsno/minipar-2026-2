@@ -179,6 +179,9 @@ print("Todas as tarefas filhas foram sincronizadas!");
         'teste8_avaliacao_4nucleos.minipar': '🚀 Teste 8: Avaliação Paralela em 4 Núcleos (Fork/Join)',
         'teste9_mandelbrot_5nucleos.minipar': '🚀 Teste 9: Mandelbrot em 5 Núcleos (Pure/Impure SPar)',
         'teste10_6nucleos_2fractais.minipar': '🚀 Teste 10: Mandelbrot + Sierpinski em 6 Núcleos',
+        'teste_pure_speedup_mandelbrot.minipar': '⚡ Pure x Sequencial: Speedup real do pure for (Mandelbrot)',
+        'teste_fork_nucleos_computadores.minipar': '🖥️ Fork/Join: subtarefas em Núcleos e em Computadores',
+        'demo_varios_computadores.minipar': '🌐 Demo: Fork em Vários Computadores (pergunta os IPs)',
         'teste_adicional1_paralelismo_3_computadores.minipar': 'Extra: Paralelismo em 3 Máquinas',
         'teste_adicional2_tapete_sierpinski.minipar': 'Extra: Tapete de Sierpinski',
         'teste_ascii_art_divertidapkrl.minipar': 'Extra: Arte ASCII',
@@ -242,7 +245,17 @@ print("Todas as tarefas filhas foram sincronizadas!");
                 })
                 .then(r => r.json())
                 .then(spec => {
+                    // Limpa respostas de outro programa e mostra, como exemplo, as
+                    // perguntas (input) deste programa, uma por linha e na ordem.
+                    userInputsEl.value = '';
                     if (spec.requires_input) {
+                        // Texto curto: tira "[ENTER = ...]" e o ":" final de cada pergunta
+                        const perguntas = (spec.inputs || []).map((inp, i) => {
+                            const texto = (inp.descricao || inp.prompt || 'Entrada')
+                                .replace(/\s*\[.*?\]/g, '').replace(/[:\s]+$/, '').trim();
+                            return `${i + 1}) ${texto}`;
+                        });
+                        userInputsEl.placeholder = perguntas.join('\n');
                         inputContainer.style.display = 'flex';
                     } else {
                         inputContainer.style.display = 'none';
@@ -900,11 +913,39 @@ print("Todas as tarefas filhas foram sincronizadas!");
     // ==========================================
     // 12. Ação: Baixar Executável (.exe)
     // ==========================================
+    // "Compilar e baixar o executável": compila o código que está no editor
+    // (/api/build) e só então baixa o .exe gerado a partir dele.
     btnDownload.addEventListener('click', () => {
+        const code = editor.getValue();
         const filename = editorFilename.textContent || 'ide_temp.minipar';
-        setStatus('working', 'Preparando download do .exe...');
-        window.location.href = `/api/download_exe/${encodeURIComponent(filename)}`;
-        setTimeout(() => setStatus('ready', 'Download solicitado'), 1200);
+        if (!code.trim()) {
+            alert('Digite ou selecione um código MiniPar antes de compilar.');
+            return;
+        }
+        setStatus('working', 'Compilando o código do editor para gerar o .exe...');
+        btnDownload.disabled = true;
+        fetch('/api/build', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, filename })
+        })
+        .then(res => res.json())
+        .then(data => {
+            btnDownload.disabled = false;
+            if (data.success && data.download_url) {
+                setStatus('ready', 'Compilado! Download do .exe iniciado');
+                terminalOutput.textContent = (data.log || '') + '\nDownload do executável iniciado.';
+                window.location.href = data.download_url;
+            } else {
+                setStatus('error', 'Falha na compilação — veja o terminal');
+                terminalOutput.textContent = data.log || 'Erro desconhecido ao compilar.';
+            }
+        })
+        .catch(err => {
+            btnDownload.disabled = false;
+            setStatus('error', 'Falha na comunicação');
+            terminalOutput.textContent = `[ERRO]: ${err.message}`;
+        });
     });
 
     // Limpar editor

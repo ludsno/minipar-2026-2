@@ -1,4 +1,23 @@
-# Calcula operação aritmética recebida como string (ex.: "+", "-", "*", "/")
+# ==============================================================================
+# TESTE 1: Calculadora Cliente/Servidor com Canais de Comunicacao (c_channel)
+# O cliente (computador 1) le a operacao (+, -, *, /) e os dois operandos e os
+# envia ao servidor (computador 2); o servidor faz o calculo e devolve o resultado.
+# Enunciado: Programa de Teste 1 - testar com localhost e depois em 2 computadores.
+#
+# Execucao: 1 ou 2 computadores. O servidor e uma subtarefa fork @computador:
+#   - SEM computador extra (ENTER na pergunta do IP, ou pela interface web sem
+#     informar o IP): o servidor roda NESTE computador, em um processo separado,
+#     e o programa avisa isso na tela;
+#   - COM 2 computadores: no computador 2 abra antes
+#       MINIPAR_TRABALHADOR=5100 ./output/teste1_calculadora_cliente_servidor.exe
+#     e no computador 1 informe o IP do computador 2 e o IP do proprio computador 1.
+#   Cliente e servidor NAO compartilham variaveis: so trocam mensagens (send/receive)
+#   pelos canais 'requisicao' (porta 5101) e 'resposta' (porta 5102), via TCP.
+# Entrada: operacao, operando 1, operando 2 e (opcional) os IPs.
+# Saida esperada: "Servidor recebeu: * 7 6" e "Resultado: 42".
+# ==============================================================================
+
+# Calcula a operacao aritmetica recebida como texto ("+", "-", "*", "/")
 func calcular(op, v1, v2) {
     if (op == "+") {
         return v1 + v2;
@@ -18,31 +37,47 @@ func calcular(op, v1, v2) {
 seq {
     print("==== Calculadora cliente-servidor ====");
     print("Opcoes: +, -, *, /");
-    var requisicao = c_channel("127.0.0.1", 5101);
-    var resposta = c_channel("127.0.0.1", 5102);
 
-    par {
-        # Thread servidor: recebe operação e operandos, devolve resultado
-        seq {
-            var op = receive(requisicao);
-            var s_v1 = receive(requisicao);
-            var s_v2 = receive(requisicao);
-            var v1 = to_number(s_v1);
-            var v2 = to_number(s_v2);
-            print("Servidor recebeu:", op, s_v1, s_v2);
-            var res = calcular(op, v1, v2);
-            send(resposta, res);
-        }
-        # Thread cliente: lê input do usuário e envia ao servidor
-        seq {
-            var operacao = input("Operacao (+,-,*,/): ");
-            var operando1 = input("Operando 1: ");
-            var operando2 = input("Operando 2: ");
-            send(requisicao, operacao);
-            send(requisicao, operando1);
-            send(requisicao, operando2);
-            var resultado = receive(resposta);
-            print("Resultado:", resultado);
-        }
+    # Cliente (computador 1): le a requisicao do teclado
+    var operacao = input("Operacao (+,-,*,/): ");
+    var operando1 = input("Operando 1: ");
+    var operando2 = input("Operando 2: ");
+
+    # Onde fica o servidor (computador 2)? ENTER = neste mesmo computador
+    var ip_servidor = input("IP do computador servidor [ENTER = este computador]: ");
+    var ip_cliente = "127.0.0.1";
+    if (ip_servidor == "") {
+        ip_servidor = "127.0.0.1";
+    } else {
+        ip_cliente = input("IP deste computador (cliente), para receber a resposta: ");
     }
+
+    # Canais de comunicacao: cliente -> servidor e servidor -> cliente
+    var requisicao = c_channel(ip_servidor, 5101);
+    var resposta = c_channel(ip_cliente, 5102);
+
+    # Servidor (computador 2): subtarefa executada em outro computador/processo.
+    # Ele recebe o IP do cliente, a operacao e os operandos, calcula e devolve.
+    fork servidor @computador(ip_servidor, 5100) {
+        var canal_requisicao = c_channel("0.0.0.0", 5101);   # so recebe: o IP nao importa
+        var ip_volta = receive(canal_requisicao);
+        var op = receive(canal_requisicao);
+        var s_v1 = receive(canal_requisicao);
+        var s_v2 = receive(canal_requisicao);
+        var v1 = to_number(s_v1);
+        var v2 = to_number(s_v2);
+        print("Servidor recebeu:", op, s_v1, s_v2);
+        var res = calcular(op, v1, v2);
+        var canal_resposta = c_channel(ip_volta, 5102);
+        send(canal_resposta, res);
+    }
+
+    # Cliente: envia a requisicao ao servidor e espera o resultado
+    send(requisicao, ip_cliente);
+    send(requisicao, operacao);
+    send(requisicao, operando1);
+    send(requisicao, operando2);
+    var resultado = receive(resposta);
+    print("Resultado:", resultado);
+    join;
 }

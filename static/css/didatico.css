@@ -577,6 +577,31 @@ body {
     outline: none;
 }
 
+/* Caixa de entradas do programa: várias linhas (uma resposta por linha).
+   Altura fixa e compacta: não pode crescer e espremer o editor de código. */
+.editor-body {
+    flex: 1;
+    min-height: 0;
+}
+
+.editor-footer-inputs {
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.3rem;
+}
+
+.form-textarea {
+    flex: 0 0 auto;
+    height: 4.2rem;          /* ~3 linhas */
+    max-height: 4.2rem;
+    overflow-y: auto;
+    resize: none;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
 /* ==========================================================================
    Terminal Card
    ========================================================================== */

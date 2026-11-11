@@ -31,6 +31,8 @@
 | **US12** | Gramática BNF | **Como** aluno/professor, **quero** consultar a BNF formal atualizada com as novas produções, **para** verificar a gramática exata da linguagem. | Arquivo `BNF-grammar.md` atualizado com todas as regras de `pure`, `impure`, `fork`, `join` e C++. | 5 | Alta | Sprint 4 |
 | **US13** | Modelagem UML | **Como** engenheiro de software, **quero** a arquitetura do compilador modelada em componentes UML com interfaces `I...`, **para** cumprir a exigência do edital. | Diagramas de Componentes, Classes, Casos de Uso e Sequência em padrão Mermaid. | 8 | Alta | Sprint 4 |
 | **US14** | Relatório Final | **Como** equipe, **quero** consolidar o relatório técnico de 17 seções, **para** entregar a avaliação final da disciplina ao professor Arturo. | Documento final com pseudocódigos, prints das telas, tabelas de benchmark e UML. | 13 | Alta | Sprint 4 |
+| **US15** | Fork Distribuído | **Como** programador, **quero** alocar cada subtarefa do `fork` em um núcleo da CPU (`@nucleo(n)`) ou em outro computador (`@computador(ip, porta)`), **para** cumprir o requisito de alocação do enunciado. | Gramática com `<alocacao>`; thread fixada no núcleo; subtarefa executada por outro processo/computador com dados só por `c_channel`; semântico bloqueia variáveis externas em `@computador`. | 8 | Alta | Sprint 4 |
+| **US16** | Testes de Integração | **Como** equipe, **quero** testes automatizados dos componentes e dos 17 programas, **para** garantir a não-regressão e documentar a Seção 13 do relatório. | `python3 -m unittest discover -s tests -v` executa 32 testes (componentes, integração entre fases, programas de teste e interface web). | 5 | Alta | Sprint 4 |
 
 ---
 
@@ -66,7 +68,7 @@ CRONOGRAMA ÁGIL DE EXECUÇÃO:
 
 ### Sprint 4: Engenharia de Software, BNF e Relatório Técnico
 - **Objetivo da Sprint:** Formalizar a gramática da linguagem, gerar a modelagem UML baseada em componentes e consolidar a documentação final.
-- **Itens Entregues:** US12, US13, US14 (em conclusão).
+- **Itens Entregues:** US12, US13, US15, US16 e US14 (relatório em conclusão).
 - **Resultados:** `BNF-grammar.md` atualizado; `docs/MODELAGEM_UML_COMPONENTES.md` com diagramas formais; `docs/METODOLOGIA_AGIL_SCRUM.md` formalizando o processo ágil.
 
 ---
@@ -75,9 +77,9 @@ CRONOGRAMA ÁGIL DE EXECUÇÃO:
 
 Para que uma funcionalidade seja considerada **Concluída (Done)**, ela deve atender aos seguintes critérios de qualidade:
 
-1. **Compilação sem Erros:** O código-fonte em Python deve ser livre de erros de sintaxe e passar nos testes unitários e de integração.
+1. **Compilação sem Erros:** O código-fonte em Python deve ser livre de erros de sintaxe e passar nos testes de integração dos componentes (`python3 -m unittest discover -s tests -v`).
 2. **Execução de Binário C++20:** Todo código MiniPar deve compilar via `g++ -std=c++20 -O3` gerando binário executável funcional.
-3. **Não-Regressão dos 15 Testes:** Todos os testes históricos (1 a 7) e novos (8, 9, 10 e adicionais) devem executar com 100% de sucesso.
+3. **Não-Regressão dos 17 Programas de Teste:** Todos os testes históricos (1 a 7) e novos (8, 9, 10 e adicionais) devem executar com a saída esperada (verificado em `T6_ProgramasDeTeste`).
 4. **Inspeção na Interface Didática:** A árvore AST e a tabela de tokens devem renderizar corretamente sem quebras de layout.
 5. **Código Versionado:** Branches semânticas criadas e mergeadas via Pull Request revisado no repositório.
 

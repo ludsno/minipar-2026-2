@@ -33,7 +33,7 @@ Antes (em 2026.1), o MiniPar só tinha `seq { ... }` e `par { ... }`. Agora ele 
 
 | Primitiva | Para que serve? | Como o Compilador traduz para C++? |
 | :--- | :--- | :--- |
-| **`pure`** (ou `@pure`) | Marca um laço `for` ou bloco como **Puro** (cálculo independente, sem efeito colateral livre). | Ativa o contexto semântico puro (SPar) e executa o laço de dados. |
+| **`pure`** (ou `@pure`) | Marca um laço `for` ou bloco como **Puro** (cálculo independente, sem efeito colateral livre). | Divide as iterações do laço entre os núcleos da CPU (padrão Map / *parallel for*, `std::thread`). O Semântico proíbe escrever em variável externa ao laço fora de `impure`. |
 | **`impure`** (ou `@impure`) | Isola o trecho dentro de um bloco `pure` que altera uma variável compartilhada ou imprime na tela. | O Semântico exige que esteja dentro de `pure`. O Codegen C++ protege automaticamente o bloco com `std::lock_guard<std::mutex>` (zero *race condition*). |
 | **`fork`** | Dispara uma subtarefa em background em outra thread/núcleo sem travar o programa principal. | Cria uma `std::thread` no pool `__active_fork_threads` executando o bloco paralelamente. |
 | **`join`** | Barreira de sincronização: faz a thread principal esperar todas as tarefas do `fork` terminarem. | Percorre `__active_fork_threads` chamando `.join()` em cada thread ativa. |
@@ -87,12 +87,16 @@ join; # Aguarda nucleo_1 e nucleo_2 terminarem antes de continuar
 
 ### 2.3 Novos Programas de Teste Implementados (`tests/`)
 
-Todos os **15 testes** da pasta `tests/` (os antigos de 1 a 7 + os novos de 8 a 10) estão compilando e passando sem erros:
+Todos os **17 programas de teste** da pasta `tests/` (os antigos de 1 a 7 + os novos de 8 a 10 + extras) compilam e executam com a saída esperada — verificado automaticamente por `tests/test_integracao_componentes.py` (32 testes). Na revisão de 10/11 o teste 7 foi corrigido (a pilha `stack` precisava de espaço pré-alocado) e o teste 1 (sockets cliente/servidor) deixou de travar (o `c_channel` agora mantém o socket de escuta aberto). Destaques:
 
 - **`tests/teste_sanidade_fase1.minipar`:** Teste rápido que valida `pure for`, `impure`, `fork` e `join` juntos.
 - **`tests/teste8_avaliacao_4nucleos.minipar` (4 Núcleos):** Professor + 3 Monitores avaliando 160 atividades (40 cada) via `fork`/`join`. Atingiu **Speedup de 3.98x** (~2.40s no sequencial vs. ~0.60s no paralelo).
 - **`tests/teste9_mandelbrot_5nucleos.minipar` (5 Núcleos):** 4 núcleos avaliando as 160 atividades + 5º núcleo calculando e desenhando o **Fractal de Mandelbrot em ASCII** usando `pure for` e `impure`. Atingiu **Speedup de 3.98x**.
 - **`tests/teste10_6nucleos_2fractais.minipar` (6 Núcleos):** 4 núcleos nas 160 atividades + 5º núcleo no Mandelbrot + 6º núcleo calculando o **Tapete de Sierpinski**, ambos usando `pure for` e `impure`. Atingiu **Speedup de 3.99x**.
+- **`tests/teste_fork_nucleos_computadores.minipar` (Fork com alocação):** a mesma tarefa dividida em 2 subtarefas, alocadas em 2 núcleos (`fork @nucleo(n)`) e depois em 2 computadores (`fork @computador(ip, porta)`, processos independentes que se comunicam só por `c_channel`), como pede a página 3 do enunciado.
+- **`tests/teste_pure_speedup_mandelbrot.minipar` (Pure x Sequencial):** o mesmo Mandelbrot pesado com `for` comum e com `pure for`. Mede o ganho real do paralelismo de dados (~10x com 16 threads; ~1x se o processo ficar preso em 1 núcleo).
+
+> **Atualização 10/11:** os Testes 8, 9 e 10 foram reescritos como tradução fiel dos programas Python do enunciado (`docs/referencia_python/`): mesmo gerador pseudoaleatório, mesma carga de CPU por atividade e mesmo fractal (idêntico ao do Python). Antes eles usavam `simular_trabalho(15)` (espera pelo relógio), que dava ~4x em qualquer máquina, inclusive com 1 núcleo só. Os números atuais e a comparação com o Python estão na tabela de benchmarks do README.
 
 #### Como testar na máquina de vocês:
 ```bash
@@ -110,6 +114,8 @@ python main.py tests/teste9_mandelbrot_5nucleos.minipar
 ---
 
 ## 3. O Que Falta Fazer (Fases 3 e 4)
+
+> **Status em 10/11/2026:** a Etapa A (2ª Interface Web Didática — PR #2) e a parte de BNF/UML/Scrum da Etapa B (PR #3) já foram concluídas e mergeadas em `develop`. Na revisão geral de 10/11 também foram feitos: `pure for` paralelo de verdade (padrão Map), regra semântica contra condição de corrida em `pure`, `print` seguro entre threads, exibição de erro sintático na interface didática, preenchimento dos cards de Speedup, correção do menu do terminal no Linux e do teste 7. Também foram feitos: alocação de subtarefas do `fork` em núcleo da CPU ou em outro computador (gramática, semântico, TAC, C++ e teste), `c_channel` sem perda de mensagens (teste 1 estável), TAC do teste 7 gerado de verdade pelo compilador (antes era um texto fixo), botão "Baixar .exe" compilando o código do editor, interfaces dos componentes no código (`src/componentes.py`) com a Tabela de Símbolos como componente próprio, comentários explicativos no código-fonte e testes automatizados de integração (`python3 -m unittest discover -s tests -v`). **Falta apenas o Relatório Final.** O texto abaixo é o planejamento original, mantido como histórico.
 
 Com o compilador e os testes prontos, o que falta para fecharmos 100% do projeto até **11 de Novembro** são duas frentes bem objetivas:
 
