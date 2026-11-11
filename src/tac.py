@@ -1,65 +1,35 @@
+"""
+Componente Gerador de Código Intermediário de Três Endereços (C_TAC).
+
+Percorre a AST e emite instruções TAC com no máximo um operador por linha
+(ex.: t0 = a + b), usando temporários (t0, t1, ...) e rótulos (WHILE_0, ENDIF_1, ...)
+com desvios "goto", "if x goto L" e "ifFalse x goto L".
+
+Diretivas do MiniPar 2026.2:
+  BEGIN_PURE_MAP / END_PURE_MAP         laço 'pure' (padrão Map)
+  ACQUIRE_LOCK / RELEASE_LOCK           região 'impure' (mutex)
+  FORK_TASK t [@nucleo(n) | @computador(ip, porta)]: ... ENDFORK t
+  JOIN_TASKS t1, t2 | ALL               barreira 'join'
+"""
 from __future__ import annotations
 import os
 from typing import Optional
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, SeqBlock, ParBlock, BinaryExpr,
+    PureBlock, ImpureBlock, ForkBlock, JoinStmt,
     UnaryExpr, NumberExpr, StringExpr, BoolExpr, IdentifierExpr, IfStmt, WhileStmt,
     DoWhileStmt, ForStmt, BreakStmt, ContinueStmt, InputExpr,
     ClassDecl, FuncDecl, ReturnStmt, MethodCall, FuncCallExpr, PropertyAccess, PropertyAssign, NewExpr, ThisExpr,
     CChannelExpr, SendStmt, ReceiveExpr, ListLiteral, MatrixCreateExpr, IndexExpr, IndexAssign
 )
+from componentes import ITAC
 
 
-EXPECTED_QUICKSORT_TAC = """t0 = 0                    // início do array
-t1 = 4                    // fim do array
-S[0] = t0                 // empilha start
-S[1] = t1                 // empilha end
-sp = 2                  // topo da pilha (próxima posição livre)
-LOOP:
-  if sp == 0 goto END     // pilha vazia → fim
-  sp = sp - 1
-  t2 = S[sp]              // end
-  sp = sp - 1
-  t3 = S[sp]              // start
-  if t3 >= t2 goto LOOP   // intervalo inválido → ignora
-  t4 = A[t2]              // pivot = A[end]
-  t5 = t3 - 1             // i = start - 1
-  t6 = t3                 // j = start
-PARTITION_LOOP:
-  if t6 >= t2 goto PARTITION_END
-  t7 = A[t6]
-  if t7 <= t4 goto SWAP
-  t6 = t6 + 1
-  goto PARTITION_LOOP
-SWAP:
-  t5 = t5 + 1
-  t8 = A[t5]
-  A[t5] = A[t6]
-  A[t6] = t8
-  t6 = t6 + 1
-  goto PARTITION_LOOP
-PARTITION_END:
-  t5 = t5 + 1
-  t9 = A[t5]
-  A[t5] = A[t2]
-  A[t2] = t9
-  t10 = t5 - 1
-  S[sp] = t3              // empilha start
-  sp = sp + 1
-  S[sp] = t10             // empilha i - 1
-  sp = sp + 1
-  t11 = t5 + 1
-  S[sp] = t11             // empilha i + 1
-  sp = sp + 1
-  S[sp] = t2              // empilha end
-  sp = sp + 1
-  goto LOOP
-END:
-  // Array A[0..4] está ordenado
-"""
 
 
-class TACGenerator:
+class TACGenerator(ITAC):
+    """Implementação da interface ITAC."""
+
     def __init__(self) -> None:
         self.lines: list[str] = []
         self.temp_count = 0
@@ -81,6 +51,7 @@ class TACGenerator:
         self.lines.append(line)
 
     def _expr(self, node: Optional[ASTNode]) -> str:
+        """Gera o TAC de uma expressão e retorna o endereço (variável, constante ou temporário) do resultado."""
         if node is None: return "0"
         if isinstance(node, NumberExpr): return node.value
         if isinstance(node, StringExpr): return f'"{node.value}"'
@@ -145,6 +116,7 @@ class TACGenerator:
         return "?"
 
     def _stmt(self, node: Optional[ASTNode]) -> None:
+        """Gera o TAC de um comando (laços e if viram rótulos + desvios condicionais)."""
         if node is None: return
         if isinstance(node, VarDecl):
             self._emit(f"{node.name} = {self._expr(node.init_value)}")
@@ -161,6 +133,28 @@ class TACGenerator:
             self._emit(f"send {self._expr(node.channel)}, {self._expr(node.message)}")
         elif isinstance(node, (SeqBlock, ParBlock)):
             for stmt in node.statements: self._stmt(stmt)
+        elif isinstance(node, PureBlock):
+            self._emit("BEGIN_PURE_MAP")
+            self._stmt(node.body)
+            self._emit("END_PURE_MAP")
+        elif isinstance(node, ImpureBlock):
+            self._emit("ACQUIRE_LOCK")
+            for stmt in node.statements:
+                self._stmt(stmt)
+            self._emit("RELEASE_LOCK")
+        elif isinstance(node, ForkBlock):
+            task_id = node.task_name or "anonymous_task"
+            alloc = ""
+            if node.alloc_kind:
+                # Argumentos da alocação são avaliados antes de disparar a subtarefa
+                args = ", ".join(self._expr(a) for a in node.alloc_args)
+                alloc = f" @{node.alloc_kind}({args})"
+            self._emit(f"FORK_TASK {task_id}{alloc}:")
+            self._stmt(node.body)
+            self._emit(f"ENDFORK {task_id}")
+        elif isinstance(node, JoinStmt):
+            targets = ", ".join(node.target_tasks) if node.target_tasks else "ALL"
+            self._emit(f"JOIN_TASKS {targets}")
         elif isinstance(node, IfStmt):
             end = self._label("ENDIF")
             else_label = self._label("ELSE") if node.else_branch else end
@@ -190,8 +184,23 @@ class TACGenerator:
             self.break_stack.pop(); self.continue_stack.pop()
         elif isinstance(node, ForStmt):
             if node.iterator_name:
-                self._emit(f"# for {node.iterator_name} in {self._expr(node.iterable)}")
+                # for (var x in colecao): percorre a coleção com um índice temporário
+                colecao = self._expr(node.iterable)
+                idx, tam, cond = self._temp(), self._temp(), self._temp()
+                start, step, end = self._label("FORIN"), self._label("FORIN_STEP"), self._label("ENDFORIN")
+                self._emit(f"{idx} = 0")
+                self._emit(f"{tam} = len {colecao}")
+                self.break_stack.append(end); self.continue_stack.append(step)
+                self._emit(f"{start}:")
+                self._emit(f"{cond} = {idx} < {tam}")
+                self._emit(f"ifFalse {cond} goto {end}")
+                self._emit(f"{node.iterator_name} = {colecao}[{idx}]")
                 self._stmt(node.body)
+                self._emit(f"{step}:")
+                self._emit(f"{idx} = {idx} + 1")
+                self._emit(f"goto {start}")
+                self._emit(f"{end}:")
+                self.break_stack.pop(); self.continue_stack.pop()
                 return
             start, step, end = self._label("FOR"), self._label("FOR_STEP"), self._label("ENDFOR")
             self._stmt(node.initializer)
@@ -222,8 +231,6 @@ class TACGenerator:
             self._emit(f"endfunc {node.name}")
 
     def generate_text(self, program: Program) -> str:
-        if any(isinstance(stmt, FuncDecl) and stmt.name == "quicksort_iterativo" for stmt in program.statements):
-            return EXPECTED_QUICKSORT_TAC
         for stmt in program.statements:
             self._stmt(stmt)
         return "\n".join(self.lines) + ("\n" if self.lines else "")

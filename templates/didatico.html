@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiniPar 2026.2 — Ambiente Didático de Compiladores</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/neo.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    
+    <!-- CSS Didático Customizado -->
+    <link rel="stylesheet" href="/static/css/didatico.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Top Navbar -->
+        <header class="navbar">
+            <div class="nav-brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+                <div class="brand-text">
+                    <div class="brand-title">
+                        MiniPar <span>2026.2</span>
+                    </div>
+                    <div class="brand-subtitle">Ambiente Educacional de Compiladores • UFAL (Prof. Arturo)</div>
+                </div>
+            </div>
+
+            <div class="nav-pills">
+                <span class="pill spar"><i class="fa-solid fa-bolt"></i> SPar Pure / Impure</span>
+                <span class="pill fork"><i class="fa-solid fa-code-branch"></i> Fork &amp; Join</span>
+                <span class="pill tac"><i class="fa-solid fa-microchip"></i> TAC &amp; C++20</span>
+            </div>
+
+            <div class="nav-actions">
+                <button id="btn-theme-toggle" class="btn btn-outline" title="Alternar entre Tema Claro e Escuro">
+                    <i class="fa-solid fa-moon" id="theme-toggle-icon"></i>
+                    <span id="theme-toggle-label">Tema Escuro</span>
+                </button>
+                <div class="status-indicator" id="status-pill">
+                    <span class="status-dot ready"></span>
+                    <span class="status-label" id="status-label">Pronto</span>
+                </div>
+                <a href="/" class="btn btn-outline" title="Alternar para IDE de Desenvolvedor">
+                    <i class="fa-solid fa-terminal"></i> Modo Desenvolvedor (2026.1)
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Grid Container -->
+        <div class="main-container">
+            <!-- Left Panel: Editor & Execution -->
+            <section class="panel-left">
+                <!-- Toolbar do Editor -->
+                <div class="card card-controls">
+                    <div class="controls-row">
+                        <div class="select-group">
+                            <label for="select-test"><i class="fa-solid fa-folder-open"></i> Programa de Teste:</label>
+                            <select id="select-test" class="form-select">
+                                <option value="" disabled selected>Carregando testes...</option>
+                            </select>
+                        </div>
+                        <div class="btn-group">
+                            <button id="btn-inspect" class="btn btn-primary" title="Executar Análise Léxica, Sintática, Semântica e TAC">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> <strong>Inspecionar Pipeline</strong>
+                            </button>
+                            <button id="btn-run" class="btn btn-success" title="Compilar em C++ e Executar">
+                                <i class="fa-solid fa-play"></i> Executar
+                            </button>
+                            <button id="btn-download" class="btn btn-secondary" title="Baixar executável .exe compilado">
+                                <i class="fa-solid fa-download"></i> Baixar .exe
+                            </button>
+                            <button id="btn-clear" class="btn btn-ghost" title="Limpar editor">
+                                <i class="fa-solid fa-trash-can"></i> Limpar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Editor de Código -->
+                <div class="card card-editor">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fa-solid fa-code"></i> Código-Fonte MiniPar (<span id="editor-filename">editor.minipar</span>)
+                        </div>
+                        <div class="editor-meta">
+                            <span id="editor-lines-count">0 linhas</span>
+                        </div>
+                    </div>
+                    <div class="card-body editor-body">
+                        <textarea id="editor-minipar"></textarea>
+                    </div>
+                    <!-- Entrada de Dados Opcional (input) -->
+                    <div class="editor-footer-inputs" id="input-container" style="display: none;">
+                        <label for="user-inputs"><i class="fa-solid fa-keyboard"></i> Entradas para o programa (uma por linha, na ordem das perguntas):</label>
+                        <textarea id="user-inputs" class="form-input form-textarea" rows="3" spellcheck="false" placeholder="Uma resposta por linha"></textarea>
+                    </div>
+                </div>
+
+                <!-- Terminal e Console de Execução -->
+                <div class="card card-terminal">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="fa-solid fa-terminal"></i> Saída da Execução (Terminal)
+                        </div>
+                        <div class="terminal-actions">
+                            <span class="badge" id="execution-time-badge" style="display: none;">0.00s</span>
+                            <button class="btn-icon" id="btn-clear-terminal" title="Limpar saída"><i class="fa-solid fa-eraser"></i></button>
+                        </div>
+                    </div>
+                    <div class="card-body terminal-body">
+                        <pre id="terminal-output" class="terminal-content">Clique em "Inspecionar Pipeline" para analisar o código ou em "Executar" para compilar e rodar o binário nativo.</pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Compiler Pipeline Tabs -->
+            <section class="panel-right">
+                <div class="card card-tabs-wrapper">
+                    <!-- Tab Navigation Buttons -->
+                    <div class="pipeline-tabs-header">
+                        <button class="tab-btn active" data-tab="tab-ast">
+                            <i class="fa-solid fa-sitemap"></i>
+                            <span class="tab-label">2. Árvore AST Visual</span>
+                            <span class="tab-badge" id="badge-ast-nodes">0</span>
+                        </button>
+                        <button class="tab-btn" data-tab="tab-tokens">
+                            <i class="fa-solid fa-list-check"></i>
+                            <span class="tab-label">1. Léxico (Tokens)</span>
+                            <span class="tab-badge" id="badge-tokens-count">0</span>
+                        </button>
+                        <button class="tab-btn" data-tab="tab-symbols">
+                            <i class="fa-solid fa-table"></i>
+                            <span class="tab-label">3. Semântico &amp; Símbolos</span>
+                            <span class="tab-badge" id="badge-symbols-count">0</span>
+                        </button>
+                        <button class="tab-btn" data-tab="tab-tac">
+                            <i class="fa-solid fa-microchip"></i>
+                            <span class="tab-label">4. Código TAC</span>
+                        </button>
+                        <button class="tab-btn" data-tab="tab-cpp">
+                            <i class="fa-brands fa-cuttlefish"></i>
+                            <span class="tab-label">5. C++ Transpilado</span>
+                        </button>
+                        <button class="tab-btn" data-tab="tab-benchmark">
+                            <i class="fa-solid fa-chart-line"></i>
+                            <span class="tab-label">6. Benchmarks</span>
+                        </button>
+                    </div>
+
+                    <!-- Tab Contents Container -->
+                    <div class="tab-contents">
+                        <!-- TAB 2: Árvore Sintática (AST) Gráfica em D3.js / SVG (DESTAQUE) -->
+                        <div class="tab-pane active" id="tab-ast">
+                            <div class="ast-toolbar">
+                                <div class="ast-search-box">
+                                    <i class="fa-solid fa-magnifying-glass"></i>
+                                    <input type="text" id="ast-search-input" placeholder="Buscar nó (ex: PureBlock, x, for)...">
+                                </div>
+                                <div class="ast-controls">
+                                    <button class="btn btn-sm btn-outline" id="btn-ast-zoom-in" title="Aumentar Zoom">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline" id="btn-ast-zoom-out" title="Diminuir Zoom">
+                                        <i class="fa-solid fa-minus"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline" id="btn-ast-reset" title="Centralizar e Ajustar">
+                                        <i class="fa-solid fa-expand"></i> Ajustar
+                                    </button>
+                                    <button class="btn btn-sm btn-outline" id="btn-ast-toggle-collapse" title="Expandir/Recolher Todos">
+                                        <i class="fa-solid fa-arrows-up-down"></i> Alternar Nós
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Legenda Didática das Cores dos Nós -->
+                            <div class="ast-legend">
+                                <span class="legend-item"><span class="legend-dot spar-pure"></span> <strong>PureBlock</strong> (Região Pura SPar)</span>
+                                <span class="legend-item"><span class="legend-dot spar-impure"></span> <strong>ImpureBlock</strong> (Mutex Lock)</span>
+                                <span class="legend-item"><span class="legend-dot fork"></span> <strong>ForkBlock</strong> (Thread Assíncrona)</span>
+                                <span class="legend-item"><span class="legend-dot join"></span> <strong>JoinStmt</strong> (Barreira Sync)</span>
+                                <span class="legend-item"><span class="legend-dot class-func"></span> <strong>Classe / Função</strong></span>
+                                <span class="legend-item"><span class="legend-dot control"></span> <strong>Controle (For, While, If)</strong></span>
+                                <span class="legend-item"><span class="legend-dot expr"></span> <strong>Expressões &amp; Literais</strong></span>
+                            </div>
+
+                            <!-- Canvas Gráfico SVG da AST -->
+                            <div class="ast-canvas-container" id="ast-canvas-container">
+                                <svg id="ast-svg" width="100%" height="100%"></svg>
+                                <div id="ast-tooltip" class="ast-tooltip" style="display: none;"></div>
+                                <div id="ast-empty-message" class="empty-state">
+                                    <i class="fa-solid fa-sitemap empty-icon"></i>
+                                    <h3>Nenhuma Árvore AST Gerada</h3>
+                                    <p>Clique no botão <strong>"Inspecionar Pipeline"</strong> para compilar o código e visualizar graficamente a Árvore Sintática com nós e arestas.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TAB 1: Tabela de Tokens do Lexer -->
+                        <div class="tab-pane" id="tab-tokens">
+                            <div class="tokens-toolbar">
+                                <div class="filter-box">
+                                    <i class="fa-solid fa-filter"></i>
+                                    <select id="filter-token-category" class="form-select form-select-sm">
+                                        <option value="all">Todas as Categorias</option>
+                                        <option value="Anotação SPar">Anotações SPar (Pure/Impure)</option>
+                                        <option value="Paralelismo & Concorrência">Paralelismo &amp; Concorrência (Fork/Join/Par)</option>
+                                        <option value="Orientação a Objetos">Orientação a Objetos (Class, Func, New)</option>
+                                        <option value="Estrutura de Controle">Estruturas de Controle</option>
+                                        <option value="Declaração & Tipo">Declarações &amp; Tipos</option>
+                                        <option value="Literal Numérico">Literais Numéricos</option>
+                                        <option value="Literal Texto">Literais Texto</option>
+                                        <option value="Identificador">Identificadores</option>
+                                        <option value="Operador">Operadores</option>
+                                        <option value="Delimitador">Delimitadores</option>
+                                    </select>
+                                </div>
+                                <div class="search-box">
+                                    <input type="text" id="tokens-search" class="form-input form-input-sm" placeholder="Filtrar por lexema...">
+                                </div>
+                                <span class="tokens-summary" id="tokens-count-label">0 tokens encontrados</span>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="didatico-table" id="tokens-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 50px;">#</th>
+                                            <th>Lexema</th>
+                                            <th>Tipo (Token)</th>
+                                            <th>Categoria</th>
+                                            <th style="width: 80px;">Linha</th>
+                                            <th style="width: 80px;">Coluna</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tokens-tbody">
+                                        <tr>
+                                            <td colspan="6" class="text-center empty-cell">
+                                                Nenhum token inspecionado. Clique em <strong>"Inspecionar Pipeline"</strong>.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- TAB 3: Tabela de Símbolos & Análise Semântica -->
+                        <div class="tab-pane" id="tab-symbols">
+                            <!-- Painel de Validações Semânticas -->
+                            <div class="semantic-status-card" id="semantic-status-card">
+                                <div class="semantic-header">
+                                    <div class="semantic-title">
+                                        <i class="fa-solid fa-shield-halved"></i> Verificações do Analisador Semântico
+                                    </div>
+                                    <span class="badge badge-success" id="semantic-badge">Validações OK</span>
+                                </div>
+                                <div class="semantic-checks-grid" id="semantic-checks-grid">
+                                    <div class="check-item ok">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                        <span><strong>Regra SPar Pure/Impure:</strong> Regiões impuras contidas corretamente</span>
+                                    </div>
+                                    <div class="check-item ok">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                        <span><strong>Declaração de Variáveis:</strong> Sem redeclarações no mesmo escopo</span>
+                                    </div>
+                                    <div class="check-item ok">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                        <span><strong>Resolução de Escopo:</strong> Variáveis e identificadores localizados</span>
+                                    </div>
+                                </div>
+                                <div id="semantic-errors-list" class="semantic-errors-list" style="display: none;"></div>
+                            </div>
+
+                            <div class="symbols-toolbar">
+                                <h3><i class="fa-solid fa-table-list"></i> Tabela de Símbolos Montada</h3>
+                                <span class="symbols-count" id="symbols-count-label">0 identificadores</span>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="didatico-table" id="symbols-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Identificador</th>
+                                            <th>Tipo Inferido</th>
+                                            <th>Escopo Registrado</th>
+                                            <th style="width: 80px;">Linha</th>
+                                            <th>Parâmetros / Atributos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="symbols-tbody">
+                                        <tr>
+                                            <td colspan="5" class="text-center empty-cell">
+                                                Nenhum símbolo disponível. Clique em <strong>"Inspecionar Pipeline"</strong>.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- TAB 4: Código Intermediário (TAC) -->
+                        <div class="tab-pane" id="tab-tac">
+                            <div class="code-view-header">
+                                <div class="code-title">
+                                    <i class="fa-solid fa-microchip"></i> Código Intermediário de Três Endereços (TAC)
+                                </div>
+                                <div class="code-actions">
+                                    <button class="btn btn-sm btn-outline" id="btn-copy-tac" title="Copiar código TAC">
+                                        <i class="fa-solid fa-copy"></i> Copiar TAC
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="code-view-body">
+                                <pre id="tac-code-content" class="code-pre"># Código de Três Endereços (TAC) será gerado aqui...</pre>
+                            </div>
+                        </div>
+
+                        <!-- TAB 5: Código C++20 Transpilado -->
+                        <div class="tab-pane" id="tab-cpp">
+                            <div class="code-view-header">
+                                <div class="code-title">
+                                    <i class="fa-brands fa-cuttlefish"></i> Código C++20 Multithread Gerado (std::thread &amp; mutex)
+                                </div>
+                                <div class="code-actions">
+                                    <button class="btn btn-sm btn-outline" id="btn-copy-cpp" title="Copiar código C++">
+                                        <i class="fa-solid fa-copy"></i> Copiar C++
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="code-view-body">
+                                <pre id="cpp-code-content" class="code-pre">// Código C++ gerado pelo compilador aparecerá aqui...</pre>
+                            </div>
+                        </div>
+
+                        <!-- TAB 6: Benchmarks & Speedup -->
+                        <div class="tab-pane" id="tab-benchmark">
+                            <div class="benchmark-container">
+                                <div class="benchmark-hero">
+                                    <h2><i class="fa-solid fa-gauge-high"></i> Avaliação de Desempenho e Speedup</h2>
+                                    <p>Comparativo entre o tempo em modo sequencial (1 núcleo) e modo paralelo multi-core (4, 5 ou 6 núcleos) com as novas primitivas do MiniPar 2026.2.</p>
+                                </div>
+
+                                <div class="kpi-cards-grid">
+                                    <div class="kpi-card">
+                                        <div class="kpi-icon"><i class="fa-solid fa-bolt"></i></div>
+                                        <div class="kpi-data">
+                                            <div class="kpi-value" id="kpi-speedup">--</div>
+                                            <div class="kpi-label">Speedup Atingido</div>
+                                        </div>
+                                    </div>
+                                    <div class="kpi-card">
+                                        <div class="kpi-icon"><i class="fa-solid fa-hourglass-start"></i></div>
+                                        <div class="kpi-data">
+                                            <div class="kpi-value" id="kpi-time-seq">--</div>
+                                            <div class="kpi-label">Tempo Sequencial</div>
+                                        </div>
+                                    </div>
+                                    <div class="kpi-card">
+                                        <div class="kpi-icon"><i class="fa-solid fa-forward-fast"></i></div>
+                                        <div class="kpi-data">
+                                            <div class="kpi-value" id="kpi-time-par">--</div>
+                                            <div class="kpi-label">Tempo Paralelo</div>
+                                        </div>
+                                    </div>
+                                    <div class="kpi-card">
+                                        <div class="kpi-icon"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                                        <div class="kpi-data">
+                                            <div class="kpi-value" id="kpi-reduction">--</div>
+                                            <div class="kpi-label">Redução de Tempo</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="benchmark-info-card">
+                                    <h3><i class="fa-solid fa-circle-info"></i> Como Funciona o Cálculo de Speedup:</h3>
+                                    <div class="formula-box">
+                                        <code>Speedup (S) = T_sequencial / T_paralelo</code>
+                                    </div>
+                                    <p>Para executar o benchmark oficial do professor, selecione <strong>Teste 8 (4 Núcleos)</strong>, <strong>Teste 9 (5 Núcleos com Mandelbrot)</strong> ou <strong>Teste 10 (6 Núcleos)</strong> no seletor de programas e clique em <strong>"Executar"</strong>. Para ver o ganho do paralelismo de dados (<code>pure for</code>) com cálculo real de CPU, selecione <strong>Pure x Sequencial</strong>.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- D3.js v7 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    
+    <!-- CodeMirror JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/edit/closebrackets.min.js"></script>
+
+    <!-- Script Didático Customizado -->
+    <script src="/static/js/didatico.js"></script>
+</body>
+</html>

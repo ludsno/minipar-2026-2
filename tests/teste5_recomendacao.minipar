@@ -1,3 +1,19 @@
+# ==============================================================================
+# TESTE 5: Sistema de Recomendacao de E-commerce com Rede Neural
+# A partir do historico de compras (16 produtos, 1 = comprou, 0 = nao comprou),
+# uma rede neural (camada oculta ReLU com 10 neuronios + saida sigmoide) calcula
+# a probabilidade de recomendar cada produto ainda nao comprado.
+# Enunciado: Programa de Teste 5. Os pesos sao calculados por formulas fixas.
+#
+# Execucao: 1 computador.
+# Entrada: 16 valores (0 ou 1), um por produto, na ordem do catalogo. Para o
+#   historico do enunciado (Smartphone, Jeans, Micro-ondas e Ficcao), digite 1
+#   nas posicoes 1, 6, 10 e 13 e 0 nas demais.
+# Saida esperada (historico do enunciado): os mesmos 12 produtos recomendados
+#   pelo programa Python do enunciado.
+# ==============================================================================
+
+# Funcoes de ativacao: ReLU (camada oculta) e sigmoide (camada de saida)
 func relu(x) {
     if (x > 0) {
         return x;
@@ -9,6 +25,7 @@ func sigmoid(x) {
     return 1 / (1 + exp(0 - x));
 }
 
+# Pesos e bias da rede, calculados por formulas fixas (resultado reproduzivel)
 func peso_entrada_oculta(produto, neuronio) {
     var base = ((produto + 1) * (neuronio + 2)) % 7;
     return (base + 1) / 20.0;
@@ -30,6 +47,7 @@ func bias_saida(produto, historico) {
     return -0.10;
 }
 
+# Catalogo: 16 produtos em 4 categorias (Eletronicos, Roupas, Eletrodomesticos, Livros)
 func nome_produto(indice) {
     if (indice == 0) {
         return "Smartphone";
@@ -79,6 +97,7 @@ func nome_produto(indice) {
     return "Fantasia";
 }
 
+# Le do teclado o historico de compras do usuario (vetor binario de 16 posicoes)
 func ler_historico_compras() {
     # Vetor binário: 1 = comprou, 0 = não comprou (16 produtos do catálogo)
     var historico = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];

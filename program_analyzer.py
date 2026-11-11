@@ -17,8 +17,10 @@ def _read_source(path: str) -> str:
 def _extract_title(source: str, filename: str) -> str:
     for line in source.splitlines():
         line = line.strip()
-        if line.startswith("#") and len(line) > 2:
-            return line.lstrip("#").strip()
+        if line.startswith("#"):
+            cleaned = line.lstrip("#=- \t").strip()
+            if len(cleaned) > 2:
+                return cleaned
     return filename.replace(".minipar", "")
 
 
@@ -61,12 +63,15 @@ def analyze_program(source_path: str) -> dict[str, Any]:
 
     has_send = bool(re.search(r'\bsend\s*\(', source))
     has_receive = bool(re.search(r'\breceive\s*\(', source))
-    has_par = bool(re.search(r'\bpar\s*\{', source))
+    has_par = bool(re.search(r'\b(par|fork|pure)\b', source))
     channel_count = _count_channels(source)
 
     multi_computer: Optional[dict[str, Any]] = None
+    # fork @computador: o próprio executável inicia os "computadores trabalhadores"
+    # em localhost (processos separados), então não é preciso abrir outros terminais.
+    uses_remote_fork = bool(re.search(r'@computador\s*\(', source))
     # c_channel + send/receive indica comunicação entre terminais distintos
-    if channel_count > 0 and (has_send or has_receive):
+    if channel_count > 0 and (has_send or has_receive) and not uses_remote_fork:
         count = max(channel_count, 2)  # mínimo cliente + servidor
         roles = [f"computador_{i + 1}" for i in range(count)]
         multi_computer = {

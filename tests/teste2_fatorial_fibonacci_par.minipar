@@ -1,4 +1,17 @@
+# ==============================================================================
+# TESTE 2: Fatorial e Serie de Fibonacci em Paralelo (bloco par)
+# Thread 1 calcula o fatorial de 5; thread 2 imprime os 8 primeiros termos da
+# serie de Fibonacci.
+# Enunciado: Programa de Teste 2 (PAR: threads executadas de forma simultanea).
+#
+# Execucao: 1 computador. Cada bloco seq dentro do par vira uma std::thread; as
+#   duas rodam ao mesmo tempo, por isso a ordem das linhas na tela pode variar.
+# Entrada: nenhuma.
+# Saida esperada: "Fatorial de 5: 120" e a serie 0 1 1 2 3 5 8 13.
+# ==============================================================================
+
 par {
+    # Thread 1: fatorial de n (fat = 1 * 2 * ... * n)
     seq {
         var n = 5;
         var fat = 1;
@@ -9,6 +22,7 @@ par {
         }
         print("Fatorial de 5:", fat);
     }
+    # Thread 2: serie de Fibonacci (cada termo e a soma dos dois anteriores)
     seq {
         var limite = 8;
         var a = 0;

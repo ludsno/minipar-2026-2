@@ -1,6 +1,21 @@
+# ==============================================================================
+# TESTE 7: Quicksort Nao Recursivo (com pilha) e Geracao de Codigo de 3 Enderecos
+# Ordena o array [33, 12, 98, 5, 61] usando uma pilha explicita de intervalos
+# (inicio, fim) no lugar da recursao.
+# Enunciado: Programa de Teste 7. O TAC gerado pelo compilador fica em
+#   output/teste7_quicksort_iterativo_tac.tac; o TAC de referencia do enunciado
+#   esta em tests/expected_results/teste7_quicksort_iterativo_tac.expected.tac.
+#
+# Execucao: 1 computador. Entrada: nenhuma.
+# Saida esperada: "Array ordenado: [5, 12, 33, 61, 98]".
+# ==============================================================================
+
 func quicksort_iterativo(arr) {
-    var stack = [0, 4];
+    # Pilha pre-alocada: as listas do MiniPar viram std::vector de tamanho fixo,
+    # entao stack[sp] = ... precisa de espaco reservado (o maximo usado aqui e 6).
+    var stack = [0, 4, 0, 0, 0, 0, 0, 0, 0, 0];
     var sp = 2;
+    # Enquanto a pilha nao estiver vazia: desempilha (fim, inicio)
     while (sp > 0) {
         sp = sp - 1;
         var fim = stack[sp];
@@ -9,6 +24,7 @@ func quicksort_iterativo(arr) {
         if (inicio >= fim) {
             continue;
         }
+        # Particionamento: pivo = arr[fim]; menores ou iguais vao para a esquerda
         var pivot = arr[fim];
         var i = inicio - 1;
         var j = inicio;
@@ -25,6 +41,7 @@ func quicksort_iterativo(arr) {
         var tmp2 = arr[i];
         arr[i] = arr[fim];
         arr[fim] = tmp2;
+        # Empilha os subintervalos a esquerda e a direita do pivo
         stack[sp] = inicio;
         sp = sp + 1;
         stack[sp] = i - 1;

@@ -1,9 +1,26 @@
+"""
+Componente Analisador Léxico (C_Lexer) do compilador MiniPar 2026.2.
+
+Lê o código-fonte caractere a caractere e produz a lista de tokens consumida pelo
+Analisador Sintático. Cada token guarda tipo, lexema, linha e coluna (usados nas
+mensagens de erro e na aba "Tokens" da interface didática).
+
+Reconhece: palavras reservadas, identificadores, números (inteiros e reais),
+strings com escapes (\\n, \\t, \\", \\\\), operadores de 1 e 2 caracteres,
+delimitadores, as anotações SPar @pure/@impure e as anotações de alocação do
+fork (@nucleo, @computador). Comentários (# até o fim da linha) e espaços são
+descartados. Caracteres desconhecidos viram tokens UNKNOWN (o parser reporta o erro).
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List
 
+from componentes import ILexico
+
+
 class TokenType(Enum):
+    """Categorias de token da linguagem MiniPar."""
     IDENTIFIER     = auto()
     NUMBER         = auto()
     STRING_LITERAL = auto()
@@ -24,6 +41,12 @@ class TokenType(Enum):
     RETURN    = auto()
     SEQ       = auto()
     PAR       = auto()
+    PURE      = auto()
+    IMPURE    = auto()
+    FORK      = auto()
+    JOIN      = auto()
+    ALLOC_NUCLEO     = auto()   # @nucleo      (alocação de subtarefa do fork em um núcleo da CPU)
+    ALLOC_COMPUTADOR = auto()   # @computador  (alocação de subtarefa do fork em outro computador)
     THIS      = auto()
     C_CHANNEL = auto()
     SEND      = auto()
@@ -59,12 +82,18 @@ class TokenType(Enum):
     END_OF_FILE = auto()
     UNKNOWN     = auto()
 
+# Palavras reservadas -> tipo de token. "true"/"false" viram BOOL_LITERAL e os
+# nomes de tipo (number, int, string, ...) viram TYPE.
 KEYWORDS: dict[str, TokenType] = {
     "class":     TokenType.CLASS,
     "extends":   TokenType.EXTENDS,
     "new":       TokenType.NEW,
     "seq":       TokenType.SEQ,
     "par":       TokenType.PAR,
+    "pure":      TokenType.PURE,
+    "impure":    TokenType.IMPURE,
+    "fork":      TokenType.FORK,
+    "join":      TokenType.JOIN,
     "if":        TokenType.IF,
     "else":      TokenType.ELSE,
     "while":     TokenType.WHILE,
@@ -94,14 +123,24 @@ KEYWORDS: dict[str, TokenType] = {
     "dict":      TokenType.TYPE,
 }
 
+# Anotações com '@' que só existem nessa forma (não reservam a palavra sem '@',
+# então 'nucleo' e 'computador' continuam livres para nomes de variáveis).
+ANNOTATIONS: dict[str, TokenType] = {
+    "nucleo":     TokenType.ALLOC_NUCLEO,
+    "computador": TokenType.ALLOC_COMPUTADOR,
+}
+
 @dataclass
 class Token:
+    """Unidade léxica: tipo, texto original (lexema) e posição no código-fonte."""
     type: TokenType
     lexeme: str
     line: int
     col: int
 
-class Lexer:
+class Lexer(ILexico):
+    """Implementação da interface ILexico (autômato de varredura da esquerda para a direita)."""
+
     def __init__(self, source_code: str) -> None:
         self._source = source_code
         self._pos = 0
@@ -109,10 +148,12 @@ class Lexer:
         self._col = 1
 
     def _peek(self) -> str:
+        """Caractere atual sem consumir ('\\0' no fim do arquivo)."""
         if self._pos >= len(self._source): return "\0"
         return self._source[self._pos]
 
     def _advance(self) -> str:
+        """Consome o caractere atual, atualizando linha e coluna."""
         ch = self._source[self._pos]
         self._pos += 1
         if ch == "\n":
@@ -133,6 +174,17 @@ class Lexer:
         return Token(token_type, lexeme, line, col)
 
     def tokenize(self) -> List[Token]:
+        """Percorre todo o código-fonte e retorna a lista de tokens (termina com END_OF_FILE).
+
+        Pseudocódigo:
+            enquanto houver caracteres:
+                pula espaços e comentários
+                se letra ou '_'   -> lê identificador; se for palavra reservada, usa o tipo dela
+                se '@'            -> lê anotação (@pure, @impure, @nucleo, @computador)
+                se dígito         -> lê número (com parte decimal opcional)
+                se '"'            -> lê string, tratando sequências de escape
+                senão             -> operador/delimitador (tenta primeiro os de 2 caracteres)
+        """
         tokens: List[Token] = []
         while self._pos < len(self._source):
             self._skip_whitespace_and_comments()
@@ -143,11 +195,27 @@ class Lexer:
             start_col = self._col
 
             if ch.isalpha() or ch == "_":
+                # Identificador ou palavra reservada
                 ident = ""
                 while self._peek().isalnum() or self._peek() == "_": ident += self._advance()
                 ttype = KEYWORDS.get(ident, TokenType.IDENTIFIER)
                 tokens.append(self._make_token(ttype, ident, start_line, start_col))
+            elif ch == "@":
+                # Anotação: @pure/@impure (SPar) ou @nucleo/@computador (alocação do fork)
+                self._advance()
+                if self._peek().isalpha() or self._peek() == "_":
+                    ident = ""
+                    while self._peek().isalnum() or self._peek() == "_": ident += self._advance()
+                    if ident in ("pure", "impure"):
+                        tokens.append(self._make_token(KEYWORDS[ident], f"@{ident}", start_line, start_col))
+                    elif ident in ANNOTATIONS:
+                        tokens.append(self._make_token(ANNOTATIONS[ident], f"@{ident}", start_line, start_col))
+                    else:
+                        tokens.append(self._make_token(TokenType.UNKNOWN, f"@{ident}", start_line, start_col))
+                else:
+                    tokens.append(self._make_token(TokenType.UNKNOWN, "@", start_line, start_col))
             elif ch.isdigit():
+                # Número inteiro ou real (ex.: 42, 3.14)
                 num = ""
                 while self._peek().isdigit(): num += self._advance()
                 if self._peek() == ".":
@@ -155,6 +223,7 @@ class Lexer:
                     while self._peek().isdigit(): num += self._advance()
                 tokens.append(self._make_token(TokenType.NUMBER, num, start_line, start_col))
             elif ch == '"':
+                # String literal com escapes \\n, \\t, \\", \\\\ (as aspas não entram no lexema)
                 self._advance()
                 text = ""
                 while self._peek() not in ('"', "\0"):
@@ -167,6 +236,7 @@ class Lexer:
                 if self._peek() == '"': self._advance()
                 tokens.append(self._make_token(TokenType.STRING_LITERAL, text, start_line, start_col))
             else:
+                # Operadores e delimitadores; =, !, &, |, <, > podem formar pares (==, !=, &&, ||, <=, >=)
                 op = self._advance()
                 single_map = {"+": TokenType.PLUS, "-": TokenType.MINUS, "*": TokenType.STAR, "/": TokenType.SLASH, "%": TokenType.MOD, "{": TokenType.LBRACE, "}": TokenType.RBRACE, "(": TokenType.LPAREN, ")": TokenType.RPAREN, "[": TokenType.LBRACKET, "]": TokenType.RBRACKET, ";": TokenType.SEMICOLON, ",": TokenType.COMMA, ".": TokenType.DOT}
                 if op == "=":

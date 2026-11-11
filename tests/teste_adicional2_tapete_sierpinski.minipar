@@ -1,3 +1,14 @@
+# ==============================================================================
+# TESTE ADICIONAL 2: Tapete de Sierpinski (recursao com matriz)
+# Preenche uma matriz 9 x 9 com '#', removendo recursivamente o quadrado central
+# de cada bloco 3 x 3 (fractal de Sierpinski).
+#
+# Execucao: 1 computador. Entrada: nenhuma.
+# Saida esperada: 9 linhas do tapete, com os furos nas posicoes centrais.
+# ==============================================================================
+
+# Preenche o bloco (linha, coluna) de lado 'tamanho': divide em 3 x 3 sub-blocos
+# e chama a si mesma para os 8 sub-blocos ao redor do centro (o centro fica vazio)
 func preencher(tela, linha, coluna, tamanho) {
     if (tamanho == 1) {
         tela[linha][coluna] = "#";

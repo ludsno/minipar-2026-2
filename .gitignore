@@ -16,6 +16,8 @@ semantic.o
 minipar_compiler.exe
 
 __pycache__
+*.pyc
+.venv/
 
 # temp_code/
 !/temp_code/.gitkeep

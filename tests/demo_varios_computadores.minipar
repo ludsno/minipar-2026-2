@@ -1,0 +1,93 @@
+# ==============================================================================
+# DEMONSTRACAO: fork com subtarefas em COMPUTADORES DIFERENTES (sem editar codigo)
+#
+# O mesmo programa roda nos 3 computadores. So o computador principal (PC1)
+# executa o programa; o PC2 e o PC3 ficam como "trabalhadores" e executam
+# apenas as subtarefas fork @computador que recebem pela rede.
+#
+#   PC2 (Linux/WSL):  MINIPAR_TRABALHADOR=6201 ./output/demo_varios_computadores.exe
+#   PC3 (Linux/WSL):  MINIPAR_TRABALHADOR=6202 ./output/demo_varios_computadores.exe
+#   PC1:              ./output/demo_varios_computadores.exe   (pergunta os IPs)
+#
+# Apertando ENTER nas perguntas, usa 127.0.0.1 (tudo neste computador; se os
+# trabalhadores nao estiverem abertos, o programa os inicia sozinho).
+# Passo a passo completo: docs/COMO_DEMONSTRAR_VARIOS_COMPUTADORES.md
+#
+# Execucao: 3 computadores (ou 1 computador com ENTER nas perguntas).
+# Entrada: IP do PC1, do PC2 e do PC3 (ENTER = 127.0.0.1).
+# ==============================================================================
+
+func soma_ate(n) {
+    var soma = 0;
+    var i = 1;
+    while (i <= n) {
+        soma = soma + i;
+        i = i + 1;
+    }
+    return soma;
+}
+
+func fatorial(n) {
+    var resultado = 1;
+    var i = 2;
+    while (i <= n) {
+        resultado = resultado * i;
+        i = i + 1;
+    }
+    return resultado;
+}
+
+print("=== Fork/Join com subtarefas em computadores diferentes ===");
+var ip_pc1 = input("IP deste computador (PC1) [ENTER = 127.0.0.1]: ");
+var ip_pc2 = input("IP do computador 2 (soma) [ENTER = 127.0.0.1]: ");
+var ip_pc3 = input("IP do computador 3 (fatorial) [ENTER = 127.0.0.1]: ");
+if (ip_pc1 == "") {
+    ip_pc1 = "127.0.0.1";
+}
+if (ip_pc2 == "") {
+    ip_pc2 = "127.0.0.1";
+}
+if (ip_pc3 == "") {
+    ip_pc3 = "127.0.0.1";
+}
+
+# Canais: quem ENVIA precisa do IP de quem RECEBE
+var envio_soma = c_channel(ip_pc2, 6211);     # PC1 -> PC2
+var envio_fat = c_channel(ip_pc3, 6212);      # PC1 -> PC3
+var retorno_soma = c_channel(ip_pc1, 6213);   # PC2 -> PC1 (o PC1 so recebe)
+var retorno_fat = c_channel(ip_pc1, 6214);    # PC3 -> PC1 (o PC1 so recebe)
+
+# Subtarefa 1: executada pelo computador 2
+fork subtarefa_soma @computador(ip_pc2, 6201) {
+    var entrada = c_channel("0.0.0.0", 6211);   # so recebe: o IP nao importa
+    var ip_volta = receive(entrada);             # o PC1 informa o proprio IP
+    var n = to_number(receive(entrada));
+    print("Recebi n =", n, "do computador", ip_volta, "- calculando a soma de 1 a n...");
+    var saida = c_channel(ip_volta, 6213);
+    send(saida, soma_ate(n));
+}
+
+# Subtarefa 2: executada pelo computador 3
+fork subtarefa_fatorial @computador(ip_pc3, 6202) {
+    var entrada = c_channel("0.0.0.0", 6212);
+    var ip_volta = receive(entrada);
+    var n = to_number(receive(entrada));
+    print("Recebi n =", n, "do computador", ip_volta, "- calculando o fatorial de n...");
+    var saida = c_channel(ip_volta, 6214);
+    send(saida, fatorial(n));
+}
+
+# O PC1 envia os dados (so por mensagem: nao ha memoria compartilhada)...
+send(envio_soma, ip_pc1);
+send(envio_soma, 10000);
+send(envio_fat, ip_pc1);
+send(envio_fat, 12);
+
+# ...recebe os resultados e espera as subtarefas terminarem (join)
+var soma = receive(retorno_soma);
+var fat = receive(retorno_fat);
+join;
+
+print("Soma de 1 a 10000 calculada no computador", ip_pc2, "=", soma);
+print("Fatorial de 12 calculado no computador", ip_pc3, "=", fat);
+print("=== Fim: as duas subtarefas foram executadas em outros computadores ===");

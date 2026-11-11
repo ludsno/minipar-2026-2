@@ -1,0 +1,184 @@
+# ==============================================================================
+# TESTE 9: 5 Nucleos de CPU (4 Avaliadores + 1 Nucleo de Fractal de Mandelbrot)
+# Carga: 160 atividades avaliadas + calculo do Fractal de Mandelbrot em ASCII
+#
+# Traducao para MiniPar do programa Python do enunciado:
+#   docs/referencia_python/Teste9-Avaliacao-Atividades-e-Fractal-5Nucleos.py
+# - mesmo gerador pseudoaleatorio (LCG) e mesma carga de CPU por atividade;
+# - mesmo fractal (50 x 20, 100 iteracoes, caracteres " .:-=+#%@");
+# - os 5 processos do Python viram subtarefas fork alocadas nos nucleos 0 a 4.
+# Extensao do grupo (SPar, SBLP'21): as linhas do fractal sao calculadas com
+# 'pure for' (padrao Map) e a contagem total de iteracoes usa 'impure'.
+#
+# Execucao: 1 computador, 5 nucleos (fork @nucleo(0..4)). Entrada: nenhuma.
+# ==============================================================================
+
+# --- 1.1 Gerador de Numeros Pseudoaleatorios (LCG), igual ao do Python ---
+class GeradorAleatorio {
+    var estado = 123456789;
+
+    func uniforme(minimo, maximo) {
+        this.estado = (this.estado * 1103515245 + 12345) % 2147483648;
+        var fracao = this.estado / 2147483647.0;
+        return minimo + (maximo - minimo) * fracao;
+    }
+
+    func avancar(passos) {
+        var k = 0;
+        while (k < passos) {
+            this.estado = (this.estado * 1103515245 + 12345) % 2147483648;
+            k = k + 1;
+        }
+    }
+}
+
+# --- 1.2 Simulacao de Carga de CPU: int(segundos * 1500000) iteracoes ---
+func simular_atraso(segundos) {
+    var limite = segundos * 1500000;
+    var soma = 0.0;
+    var i = 0;
+    while (i + 1 <= limite) {
+        soma = soma + i;
+        i = i + 1;
+    }
+    return soma;
+}
+
+# --- Nucleos 1 a 4: correcao das atividades ---
+func avaliar_atividade(gerador) {
+    var tempo_correcao = gerador.uniforme(0.05, 0.15);
+    return simular_atraso(tempo_correcao);
+}
+
+func trabalhador_avaliacao(inicio, fim) {
+    var gerador = new GeradorAleatorio();
+    gerador.avancar(inicio);
+    var verificacao = 0.0;
+    var tarefa = inicio;
+    while (tarefa < fim) {
+        verificacao = verificacao + avaliar_atividade(gerador);
+        tarefa = tarefa + 1;
+    }
+    return verificacao;
+}
+
+# --- Nucleo 5: Fractal de Mandelbrot em arte ASCII ---
+func trabalhador_fractal() {
+    var largura = 50;
+    var altura = 20;
+    var max_iter = 100;
+    var caracteres = " .:-=+#%@";
+    var linhas = matrix(altura, 1, "");   # uma posicao por linha do fractal
+    var total_iteracoes = 0;              # acumulador compartilhado
+
+    # Pure (Map): cada linha y e independente -> iteracoes divididas entre threads
+    pure for (var y = 0; y < altura; y = y + 1) {
+        # Mapeia a coordenada Y para o plano complexo [-1.2, 1.2]
+        var cy = ((y * 1.0) / altura) * 2.4 - 1.2;
+        var linha = "";
+        var iteracoes_linha = 0;
+        for (var x = 0; x < largura; x = x + 1) {
+            # Mapeia a coordenada X para o plano complexo [-2.0, 1.0]
+            var cx = ((x * 1.0) / largura) * 3.0 - 2.0;
+            # Equacao do fractal: z = z^2 + c
+            var zx = 0.0;
+            var zy = 0.0;
+            var iteracao = 0;
+            while ((zx * zx + zy * zy <= 4.0) && (iteracao < max_iter)) {
+                var tmp = zx * zx - zy * zy + cx;
+                zy = 2.0 * zx * zy + cy;
+                zx = tmp;
+                iteracao = iteracao + 1;
+            }
+            # Mapeia as iteracoes para um caractere: int((iteracao / max_iter) * 8)
+            linha = linha + caracteres[(iteracao * 8) / max_iter];
+            iteracoes_linha = iteracoes_linha + iteracao;
+        }
+        linhas[y][0] = linha;
+
+        # Impure: efeito colateral em variavel compartilhada, protegido por mutex
+        impure {
+            total_iteracoes = total_iteracoes + iteracoes_linha;
+        }
+    }
+
+    var desenho = "\n=== FRACTAL DE MANDELBROT (Gerado pelo Nucleo 5) ===\n";
+    for (var k = 0; k < altura; k = k + 1) {
+        desenho = desenho + linhas[k][0] + "\n";
+    }
+    desenho = desenho + "====================================================\n";
+    return desenho + "Iteracoes calculadas (acumuladas na regiao impure): " + str(total_iteracoes) + "\n";
+}
+
+# ==============================================================================
+# EXECUCAO SEQUENCIAL E PARALELA + BENCHMARK
+# ==============================================================================
+
+var TOTAL_ATIVIDADES = 40 * 4;   # 160 atividades
+print("Carga de Trabalho:", TOTAL_ATIVIDADES, "atividades + 1 Calculo de Fractal ASCII");
+print("");
+
+# --- Modo Sequencial: 1 unico nucleo faz as 160 avaliacoes e o fractal ---
+print("--- 1. Executando Modo Sequencial (Apenas 1 Nucleo) ---");
+var inicio_seq = obter_tempo();
+var verificacao_seq = trabalhador_avaliacao(0, TOTAL_ATIVIDADES);
+var fractal_seq = trabalhador_fractal();
+var tempo_seq = obter_tempo() - inicio_seq;
+print("Tempo Sequencial Concluido em:", tempo_seq, "segundos");
+print("");
+
+# --- Modo Paralelo: 5 nucleos (1 a 4 avaliacoes, 5 fractal) ---
+print("--- 2. Executando Modo Paralelo (5 Nucleos Dedicados) ---");
+var tamanho_fatia = TOTAL_ATIVIDADES / 4;
+var resultado_1 = 0.0;
+var resultado_2 = 0.0;
+var resultado_3 = 0.0;
+var resultado_4 = 0.0;
+var fractal_par = "";
+var inicio_par = obter_tempo();
+
+# FORK: dispara as 5 subtarefas, cada uma em um nucleo
+fork professor @nucleo(0) {
+    resultado_1 = trabalhador_avaliacao(0, tamanho_fatia);
+}
+fork monitor_1 @nucleo(1) {
+    resultado_2 = trabalhador_avaliacao(tamanho_fatia, 2 * tamanho_fatia);
+}
+fork monitor_2 @nucleo(2) {
+    resultado_3 = trabalhador_avaliacao(2 * tamanho_fatia, 3 * tamanho_fatia);
+}
+fork monitor_3 @nucleo(3) {
+    resultado_4 = trabalhador_avaliacao(3 * tamanho_fatia, 4 * tamanho_fatia);
+}
+fork fractal_mandelbrot @nucleo(4) {
+    fractal_par = trabalhador_fractal();
+}
+
+# JOIN: espera os 5 nucleos e coleta os resultados
+join;
+var tempo_par = obter_tempo() - inicio_par;
+var verificacao_par = resultado_1 + resultado_2 + resultado_3 + resultado_4;
+print("Tempo Paralelo Concluido em:  ", tempo_par, "segundos");
+print("");
+
+# Exibe o fractal gerado no processamento paralelo
+print(fractal_par);
+
+if ((verificacao_seq == verificacao_par) && (fractal_seq == fractal_par)) {
+    print("Verificacao (join): avaliacoes e fractal do modo paralelo conferem com o sequencial (OK)");
+} else {
+    print("Verificacao (join): RESULTADOS DIFERENTES");
+}
+
+var speedup = tempo_seq / tempo_par;
+var reducao_pct = ((tempo_seq - tempo_par) / tempo_seq) * 100;
+
+print("==========================================");
+print("         BENCHMARK DE DESEMPENHO          ");
+print("==========================================");
+print("Nucleos Utilizados (Paralelo) : 5");
+print("Tempo Sequencial             :", tempo_seq, "s");
+print("Tempo Paralelo               :", tempo_par, "s");
+print("Aceleracao (Speedup)         :", speedup, "x mais rapido!");
+print("Reducao de Tempo             :", reducao_pct, "%");
+print("==========================================");

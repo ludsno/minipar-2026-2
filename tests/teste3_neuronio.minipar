@@ -1,3 +1,14 @@
+# ==============================================================================
+# TESTE 3: Neuronio Artificial (Perceptron) com Classes e Objetos
+# Um neuronio com uma entrada e um bias aprende a produzir a saida desejada (0)
+# ajustando os pesos pela regra delta ate o erro ser zero.
+# Enunciado: Programa de Teste 3 (traducao da classe Neuronio em Python).
+#
+# Execucao: 1 computador. Entrada: nenhuma.
+# Saida esperada: o neuronio aprende na iteracao 51 ("Iteracoes totais: 51").
+# ==============================================================================
+
+# Neuronio: atributos com os valores iniciais do enunciado (peso 0.5, bias 1, taxa 0.01)
 class Neuronio {
     var input_val = 1;
     var output_desejado = 0;
@@ -8,6 +19,7 @@ class Neuronio {
     var erro = 999;
     var iteracao = 0;
 
+    # Funcao de ativacao degrau: 1 se a soma ponderada for positiva, senao 0
     func ativacao(soma) {
         if (soma > 0) {
             return 1;
@@ -15,6 +27,7 @@ class Neuronio {
         return 0;
     }
 
+    # Treina ate o erro ser zero: soma ponderada -> ativacao -> erro -> ajuste dos pesos
     func treinar() {
         print("==== Teste 3: neuronio simples com classes e objetos ====");
         print("Entrada:", this.input_val, "Saida desejada:", this.output_desejado);
@@ -33,6 +46,7 @@ class Neuronio {
             print("Peso entrada:", this.peso);
             print("Peso bias:", this.peso_bias);
 
+            # Regra delta: peso = peso + taxa * entrada * erro
             if (this.erro != 0) {
                 this.peso = this.peso + ((this.taxa_aprendizado * this.input_val) * this.erro);
                 this.peso_bias = this.peso_bias + ((this.taxa_aprendizado * this.bias) * this.erro);
@@ -47,6 +61,7 @@ class Neuronio {
     }
 }
 
+# Programa principal: instancia o objeto e chama o metodo de treino
 seq {
     var neuronio = new Neuronio();
     neuronio.treinar();

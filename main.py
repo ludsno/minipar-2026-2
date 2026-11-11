@@ -1,3 +1,13 @@
+"""
+Ponto de entrada do Compilador MiniPar 2026.2.
+
+    python3 main.py                         -> menu: Modo Terminal ou Interface Web
+    python3 main.py programa.minipar [nome] -> compila direto (gera output/<nome>.tac, .cpp e .exe)
+
+Pipeline (cada etapa é um componente de software, ver src/componentes.py):
+    código-fonte -> C_Lexer (tokens) -> C_Parser (AST) -> C_Semantic + C_TabelaSimbolos
+                 -> C_TAC (output/<nome>.tac) -> C_CodeGen (output/<nome>.cpp) -> g++ -O3 -> .exe
+"""
 import sys
 import os
 
@@ -11,7 +21,7 @@ from tac import TACGenerator
 from codegen import CppCodeGenerator
 
 def compile_file(source_path: str, output_name: str) -> bool:
-    """Processa as 3 Fases do Compilador em um arquivo alvo."""
+    """Executa todas as fases do compilador sobre um arquivo .minipar. Retorna True se gerou o .exe."""
     print(f"\n=== Compilando: {source_path} ===")
     try:
         with open(source_path, encoding="utf-8") as f:

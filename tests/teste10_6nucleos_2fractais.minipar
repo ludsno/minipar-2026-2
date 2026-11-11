@@ -1,0 +1,227 @@
+# ==============================================================================
+# TESTE 10: 6 Nucleos de CPU (160 Atividades + Mandelbrot + Tapete de Sierpinski)
+#
+# Traducao para MiniPar do programa Python do enunciado:
+#   docs/referencia_python/Teste10-Nucleos-AvaliacaoAtiv-e-2Fractais.py
+# - mesmo gerador pseudoaleatorio (LCG) e mesma carga de CPU por atividade;
+# - mesmo fractal de Mandelbrot (50 x 20, 100 iteracoes, " .:-=+#%@");
+# - Nucleos 1 a 4: avaliacoes; Nucleo 5: Mandelbrot; Nucleo 6: Sierpinski
+#   (fork @nucleo(0..5)).
+# - Como no Python, o modo sequencial faz as avaliacoes + Mandelbrot, e o
+#   Sierpinski so e desenhado no modo paralelo (pelo 6o nucleo).
+# - O Python desenha o Sierpinski com Turtle (janela grafica); aqui o tapete e
+#   desenhado em ASCII (27 x 27, grau 3), pois o programa roda no terminal.
+# Extensao do grupo (SPar): os dois fractais usam 'pure for' + 'impure'.
+#
+# Execucao: 1 computador, 6 nucleos (fork @nucleo(0..5)). Entrada: nenhuma.
+# ==============================================================================
+
+# --- 1.1 Gerador de Numeros Pseudoaleatorios (LCG), igual ao do Python ---
+class GeradorAleatorio {
+    var estado = 123456789;
+
+    func uniforme(minimo, maximo) {
+        this.estado = (this.estado * 1103515245 + 12345) % 2147483648;
+        var fracao = this.estado / 2147483647.0;
+        return minimo + (maximo - minimo) * fracao;
+    }
+
+    func avancar(passos) {
+        var k = 0;
+        while (k < passos) {
+            this.estado = (this.estado * 1103515245 + 12345) % 2147483648;
+            k = k + 1;
+        }
+    }
+}
+
+# --- 1.2 Simulacao de Carga de CPU: int(segundos * 1500000) iteracoes ---
+func simular_atraso(segundos) {
+    var limite = segundos * 1500000;
+    var soma = 0.0;
+    var i = 0;
+    while (i + 1 <= limite) {
+        soma = soma + i;
+        i = i + 1;
+    }
+    return soma;
+}
+
+# --- Nucleos 1 a 4: correcao das atividades ---
+func avaliar_atividade(gerador) {
+    var tempo_correcao = gerador.uniforme(0.05, 0.15);
+    return simular_atraso(tempo_correcao);
+}
+
+func trabalhador_avaliacao(inicio, fim) {
+    var gerador = new GeradorAleatorio();
+    gerador.avancar(inicio);
+    var verificacao = 0.0;
+    var tarefa = inicio;
+    while (tarefa < fim) {
+        verificacao = verificacao + avaliar_atividade(gerador);
+        tarefa = tarefa + 1;
+    }
+    return verificacao;
+}
+
+# --- Nucleo 5: Fractal de Mandelbrot (ASCII) ---
+func trabalhador_mandelbrot() {
+    var largura = 50;
+    var altura = 20;
+    var max_iter = 100;
+    var caracteres = " .:-=+#%@";
+    var linhas = matrix(altura, 1, "");
+    var total_iteracoes = 0;
+
+    pure for (var y = 0; y < altura; y = y + 1) {
+        var cy = ((y * 1.0) / altura) * 2.4 - 1.2;
+        var linha = "";
+        var iteracoes_linha = 0;
+        for (var x = 0; x < largura; x = x + 1) {
+            var cx = ((x * 1.0) / largura) * 3.0 - 2.0;
+            var zx = 0.0;
+            var zy = 0.0;
+            var iteracao = 0;
+            while ((zx * zx + zy * zy <= 4.0) && (iteracao < max_iter)) {
+                var tmp = zx * zx - zy * zy + cx;
+                zy = 2.0 * zx * zy + cy;
+                zx = tmp;
+                iteracao = iteracao + 1;
+            }
+            linha = linha + caracteres[(iteracao * 8) / max_iter];
+            iteracoes_linha = iteracoes_linha + iteracao;
+        }
+        linhas[y][0] = linha;
+        impure {
+            total_iteracoes = total_iteracoes + iteracoes_linha;
+        }
+    }
+
+    var desenho = "\n=== FRACTAL DE MANDELBROT (Gerado pelo Nucleo 5) ===\n";
+    for (var k = 0; k < altura; k = k + 1) {
+        desenho = desenho + linhas[k][0] + "\n";
+    }
+    desenho = desenho + "====================================================\n";
+    return desenho + "Iteracoes calculadas (acumuladas na regiao impure): " + str(total_iteracoes) + "\n";
+}
+
+# --- Nucleo 6: Tapete de Sierpinski (ASCII) ---
+# A celula (x, y) e um "furo" se, em alguma escala, os digitos de x e de y na
+# base 3 forem ambos 1 — e o quadrado central removido recursivamente.
+func trabalhador_sierpinski() {
+    var tamanho = 27;   # 3^3 celulas por lado (grau 3)
+    var linhas = matrix(tamanho, 1, "");
+    var total_preenchidas = 0;
+
+    pure for (var y = 0; y < tamanho; y = y + 1) {
+        var linha = "";
+        var preenchidas = 0;
+        for (var x = 0; x < tamanho; x = x + 1) {
+            var a = x;
+            var b = y;
+            var furo = false;
+            while ((a > 0) || (b > 0)) {
+                if (((a % 3) == 1) && ((b % 3) == 1)) {
+                    furo = true;
+                }
+                a = a / 3;
+                b = b / 3;
+            }
+            if (furo) {
+                linha = linha + "  ";
+            } else {
+                linha = linha + "##";
+                preenchidas = preenchidas + 1;
+            }
+        }
+        linhas[y][0] = linha;
+        impure {
+            total_preenchidas = total_preenchidas + preenchidas;
+        }
+    }
+
+    var desenho = "=== TAPETE DE SIERPINSKI (Gerado pelo Nucleo 6) ===\n";
+    for (var k = 0; k < tamanho; k = k + 1) {
+        desenho = desenho + linhas[k][0] + "\n";
+    }
+    desenho = desenho + "====================================================\n";
+    print(desenho + "Celulas preenchidas (acumuladas na regiao impure): " + str(total_preenchidas));
+    print("-> [Nucleo 6] Tapete de Sierpinski renderizado com sucesso na tela!");
+}
+
+# ==============================================================================
+# EXECUCAO SEQUENCIAL E PARALELA + BENCHMARK
+# ==============================================================================
+
+var TOTAL_ATIVIDADES = 40 * 4;   # 160 atividades
+print("Carga de Trabalho:", TOTAL_ATIVIDADES, "atividades + Mandelbrot (ASCII) + Sierpinski (ASCII)");
+print("");
+
+# --- Modo Sequencial: 1 nucleo faz as 160 avaliacoes e o Mandelbrot ---
+print("--- 1. Executando Modo Sequencial (Apenas 1 Nucleo) ---");
+var inicio_seq = obter_tempo();
+var verificacao_seq = trabalhador_avaliacao(0, TOTAL_ATIVIDADES);
+var mandelbrot_seq = trabalhador_mandelbrot();
+var tempo_seq = obter_tempo() - inicio_seq;
+print("Tempo Sequencial Concluido em:", tempo_seq, "segundos");
+print("");
+
+# --- Modo Paralelo: 6 nucleos dedicados ---
+print("--- 2. Executando Modo Paralelo (6 Nucleos Dedicados) ---");
+var tamanho_fatia = TOTAL_ATIVIDADES / 4;
+var resultado_1 = 0.0;
+var resultado_2 = 0.0;
+var resultado_3 = 0.0;
+var resultado_4 = 0.0;
+var mandelbrot_par = "";
+var inicio_par = obter_tempo();
+
+# FORK: 6 subtarefas, cada uma alocada em um nucleo da CPU
+fork professor @nucleo(0) {
+    resultado_1 = trabalhador_avaliacao(0, tamanho_fatia);
+}
+fork monitor_1 @nucleo(1) {
+    resultado_2 = trabalhador_avaliacao(tamanho_fatia, 2 * tamanho_fatia);
+}
+fork monitor_2 @nucleo(2) {
+    resultado_3 = trabalhador_avaliacao(2 * tamanho_fatia, 3 * tamanho_fatia);
+}
+fork monitor_3 @nucleo(3) {
+    resultado_4 = trabalhador_avaliacao(3 * tamanho_fatia, 4 * tamanho_fatia);
+}
+fork fractal_mandelbrot @nucleo(4) {
+    mandelbrot_par = trabalhador_mandelbrot();
+}
+fork fractal_sierpinski @nucleo(5) {
+    trabalhador_sierpinski();
+}
+
+# JOIN: espera os 6 nucleos e coleta os resultados
+join;
+var tempo_par = obter_tempo() - inicio_par;
+var verificacao_par = resultado_1 + resultado_2 + resultado_3 + resultado_4;
+print("Tempo Paralelo Concluido em:  ", tempo_par, "segundos");
+print("");
+
+# Exibe o fractal de Mandelbrot gerado no processamento paralelo
+print(mandelbrot_par);
+
+if ((verificacao_seq == verificacao_par) && (mandelbrot_seq == mandelbrot_par)) {
+    print("Verificacao (join): avaliacoes e Mandelbrot do modo paralelo conferem com o sequencial (OK)");
+} else {
+    print("Verificacao (join): RESULTADOS DIFERENTES");
+}
+
+var speedup = tempo_seq / tempo_par;
+var reducao_pct = ((tempo_seq - tempo_par) / tempo_seq) * 100;
+
+print("==========================================");
+print("         BENCHMARK DE DESEMPENHO          ");
+print("==========================================");
+print("Nucleos Utilizados (Paralelo) : 6");
+print("Tempo Sequencial             :", tempo_seq, "s");
+print("Tempo Paralelo               :", tempo_par, "s");
+print("Aceleracao (Speedup)         :", speedup, "x mais rapido!");
+print("Reducao de Tempo             :", reducao_pct, "%");
+print("==========================================");

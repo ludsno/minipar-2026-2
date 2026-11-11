@@ -1,0 +1,46 @@
+# ==============================================================================
+# TESTE DE SANIDADE: pure, impure, fork e join juntos
+# Teste rapido das 4 primitivas novas do MiniPar 2026.2.
+#
+# Execucao: 1 computador (varios nucleos). Entrada: nenhuma.
+# Saida esperada: soma 380 (2 * (0 + 1 + ... + 19)) e os resultados 150 e 500.
+# ==============================================================================
+
+var soma_compartilhada = 0;
+
+print("--- Iniciando Loop Pure com Regiao Impure ---");
+
+# pure for: as 20 iteracoes sao divididas entre os nucleos (padrao Map);
+# a escrita na variavel compartilhada fica em impure (protegida por mutex)
+pure for (var i = 0; i < 20; i = i + 1) {
+    var dobro = i * 2;
+    impure {
+        soma_compartilhada = soma_compartilhada + dobro;
+    }
+}
+
+print("Resultado da soma apos Pure/Impure: ", soma_compartilhada);
+
+print("--- Disparando Tarefas Concorrentes com Fork ---");
+
+var resultado_task1 = 0;
+var resultado_task2 = 0;
+
+# fork: duas subtarefas em threads; o join espera as duas terminarem
+fork tarefa_a {
+    resultado_task1 = 100 + 50;
+    print("Tarefa A concluida.");
+}
+
+fork tarefa_b {
+    resultado_task2 = 200 + 300;
+    print("Tarefa B concluida.");
+}
+
+print("Pai aguardando tarefas via Join...");
+join;
+
+print("Resultado Tarefa A: ", resultado_task1);
+print("Resultado Tarefa B: ", resultado_task2);
+print("--- Teste de Sanidade Fase 1 Finalizado com Sucesso! ---");
+

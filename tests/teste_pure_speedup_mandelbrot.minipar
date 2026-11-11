@@ -1,0 +1,87 @@
+# ==============================================================================
+# TESTE PURE x SEQUENCIAL: Speedup real do paralelismo de dados (SPar Pure / Map)
+# O mesmo calculo do Conjunto de Mandelbrot (carga pesada de CPU) e feito duas vezes:
+#   1) com um laco 'for' comum   -> executa em 1 nucleo
+#   2) com um laco 'pure for'    -> as iteracoes sao divididas entre os nucleos
+# Nao usa simular_trabalho(): o tempo medido e calculo de verdade.
+# Dica: MINIPAR_PURE_THREADS=N fixa o numero de threads do 'pure' (ex.: 1, 2, 4).
+#
+# Execucao: 1 computador, todos os nucleos (pure for). Entrada: nenhuma.
+# ==============================================================================
+
+# Conta quantos pontos da linha y pertencem ao conjunto de Mandelbrot
+func pontos_no_conjunto(y, altura, largura, max_iter) {
+    var cy = ((y * 1.0) / altura) * 2.4 - 1.2;
+    var dentro = 0;
+    for (var x = 0; x < largura; x = x + 1) {
+        var cx = ((x * 1.0) / largura) * 3.0 - 2.0;
+        var zx = 0.0;
+        var zy = 0.0;
+        var iter = 0;
+        while ((zx * zx + zy * zy <= 4.0) && (iter < max_iter)) {
+            var tmp = zx * zx - zy * zy + cx;
+            zy = 2.0 * zx * zy + cy;
+            zx = tmp;
+            iter = iter + 1;
+        }
+        if (iter >= max_iter) {
+            dentro = dentro + 1;
+        }
+    }
+    return dentro;
+}
+
+var altura = 1200;
+var largura = 1600;
+var max_iter = 2000;
+print("Carga: Mandelbrot", largura, "x", altura, "com ate", max_iter, "iteracoes por ponto");
+
+# ------------------------------------------------------------------------------
+# 1. Versao sequencial (laco for comum)
+# ------------------------------------------------------------------------------
+print("\n--- 1. Executando Modo Sequencial (laco for comum, 1 nucleo) ---");
+var t_ini_seq = obter_tempo();
+var total_seq = 0;
+for (var y = 0; y < altura; y = y + 1) {
+    total_seq = total_seq + pontos_no_conjunto(y, altura, largura, max_iter);
+}
+var tempo_seq = obter_tempo() - t_ini_seq;
+print("Pontos dentro do conjunto:", total_seq);
+print("Tempo Sequencial Concluido em:", tempo_seq, "segundos");
+
+# ------------------------------------------------------------------------------
+# 2. Versao paralela (pure for + impure)
+# ------------------------------------------------------------------------------
+print("\n--- 2. Executando Modo Paralelo (pure for: iteracoes divididas entre os nucleos) ---");
+var t_ini_par = obter_tempo();
+var total_par = 0;
+pure for (var y = 0; y < altura; y = y + 1) {
+    var dentro = pontos_no_conjunto(y, altura, largura, max_iter);
+    # Soma em variavel compartilhada: regiao impure (protegida por mutex)
+    impure {
+        total_par = total_par + dentro;
+    }
+}
+var tempo_par = obter_tempo() - t_ini_par;
+print("Pontos dentro do conjunto:", total_par);
+print("Tempo Paralelo Concluido em:", tempo_par, "segundos");
+
+# ------------------------------------------------------------------------------
+# 3. Benchmark
+# ------------------------------------------------------------------------------
+var speedup = tempo_seq / tempo_par;
+var reducao = (1.0 - (tempo_par / tempo_seq)) * 100.0;
+
+print("\n==========================================");
+print("BENCHMARK PURE x SEQUENCIAL");
+print("==========================================");
+if (total_seq == total_par) {
+    print("Verificacao                  : mesmo resultado nas duas versoes (OK)");
+} else {
+    print("Verificacao                  : RESULTADOS DIFERENTES (condicao de corrida?)");
+}
+print("Tempo Sequencial             :", tempo_seq, "s");
+print("Tempo Paralelo               :", tempo_par, "s");
+print("Aceleracao (Speedup)         :", speedup, "x mais rapido!");
+print("Reducao de Tempo             :", reducao, "%");
+print("==========================================");
